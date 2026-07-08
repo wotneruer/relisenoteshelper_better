@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+"$(dirname "$0")/_compose.sh" build --no-cache app worker
+"$(dirname "$0")/_compose.sh" up -d
+"$(dirname "$0")/_compose.sh" ps

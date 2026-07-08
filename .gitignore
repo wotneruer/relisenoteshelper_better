@@ -1,0 +1,38 @@
+# Runtime / data / backups
+/volumes/
+/_backups/
+/tmp/
+/storage/
+
+# Dependencies
+/vendor/
+/node_modules/
+/app/backend/vendor/
+/app/backend/node_modules/
+
+# Laravel runtime
+/app/backend/storage/logs/*
+/app/backend/storage/framework/cache/*
+/app/backend/storage/framework/sessions/*
+/app/backend/storage/framework/views/*
+/app/backend/bootstrap/cache/*.php
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+/app/backend/.env
+/app/backend/.env.*
+!/app/backend/.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+*.swp
