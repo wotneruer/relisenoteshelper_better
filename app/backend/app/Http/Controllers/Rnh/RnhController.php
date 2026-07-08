@@ -1814,7 +1814,14 @@ public function releases()
                     $service = $catalog->findForTemplateRow($row);
                 }
 
+                $service = is_array($service) ? $service : [];
                 $refsSnapshot = is_array($service['refs_snapshot'] ?? null) ? $service['refs_snapshot'] : [];
+
+                // Canonical service catalog owns repo metadata; pivot rows only provide template refs/flags.
+                $canonicalRepoPath = $first(
+                    $service['local_path'] ?? null,
+                    $refsSnapshot['repo_path'] ?? null
+                );
 
                 $serviceName = $first(
                     $service['service_name'] ?? null,
@@ -1825,11 +1832,31 @@ public function releases()
                 );
 
                 $localPath = $first(
-                    $service['local_path'] ?? null,
-                    $refsSnapshot['repo_path'] ?? null,
+                    $canonicalRepoPath,
                     $rowArr['local_path'] ?? null,
                     $metadata['repo_path'] ?? null
                 );
+
+                $gitUrl = $first(
+                    $service['git_url'] ?? null,
+                    $rowArr['git_url'] ?? null,
+                    $metadata['git_url'] ?? null
+                );
+
+                $validationStatus = $first(
+                    $service['validation_status'] ?? null,
+                    $service['status'] ?? null,
+                    $rowArr['validation_status'] ?? null,
+                    $metadata['validation_status'] ?? null
+                );
+
+                $projectIds = is_array($service['project_ids'] ?? null) ? $service['project_ids'] : [];
+
+                $serviceTags = is_array($service['service_tags'] ?? null)
+                    ? $service['service_tags']
+                    : (is_array($service['tags'] ?? null) ? $service['tags'] : []);
+
+                $refsLoaded = (bool) ($refsSnapshot['loaded'] ?? false) || $canonicalRepoPath !== '';
 
                 $baseRef = $first(
                     $rowArr['base_commit_sha'] ?? null,
@@ -1870,14 +1897,14 @@ public function releases()
                     'service_id' => (int) ($service['service_id'] ?? $service['id'] ?? $rowArr['service_id'] ?? 0),
                     'service_name' => $serviceName,
                     'local_path' => $localPath,
-                    'git_url' => $service['git_url'] ?? $rowArr['git_url'] ?? '',
+                    'git_url' => $gitUrl,
                     'base_ref' => $baseRef,
                     'target_refs' => $targetRefs,
                     'included' => $included,
-                    'status' => $service['validation_status'] ?? $rowArr['validation_status'] ?? '',
-                    'refs_loaded' => (bool) ($refsSnapshot['loaded'] ?? false),
-                    'project_ids' => $service['project_ids'] ?? [],
-                    'service_tags' => $service['service_tags'] ?? $service['tags'] ?? [],
+                    'status' => $validationStatus,
+                    'refs_loaded' => $refsLoaded,
+                    'project_ids' => $projectIds,
+                    'service_tags' => $serviceTags,
                     'results' => [],
                 ];
 
