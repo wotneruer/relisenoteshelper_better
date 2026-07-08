@@ -1237,6 +1237,8 @@
             <div class="rnh-tpl-actions">
                 <button type="button" class="rnh-tpl-btn primary" onclick="rnhTplSaveNotice()">Зберегти</button>
                 <button type="button" class="rnh-tpl-btn primary" onclick="rnhTplScanDraft()">Сканувати</button>
+                <button type="button" id="rnhGitSyncStage5BBtn" class="rnh-tpl-btn">Оновити Git refs</button>
+                <button type="button" id="rnhGitDiffStage5Btn" class="rnh-tpl-btn primary">Git diff по шаблону</button>
                 <button type="button" class="rnh-tpl-btn" onclick="window.location.href='{{ route('rnh.output') }}'">Output</button>
                 <button type="button" class="rnh-tpl-btn danger" onclick="rnhTplDeleteCurrentV3B()">Видалити</button>
             </div>
@@ -1361,6 +1363,22 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+
+            <div id="rnhGitDiffStage5Panel" class="rnh-tpl-section rnh-git-diff-stage5-panel">
+                <div class="rnh-tpl-section-head rnh-git-diff-stage5-head">
+                    <span>Git diff по шаблону</span>
+
+                    <div class="rnh-git-diff-stage5-actions">
+                        <label><input id="rnhGitDiffStage5Full" type="checkbox"> full patch</label>
+                        <button type="button" class="rnh-tpl-btn primary" id="rnhGitDiffStage5Run">Запустити</button>
+                        <button type="button" class="rnh-tpl-btn" id="rnhGitDiffStage5Copy">Copy JSON</button>
+                    </div>
+                </div>
+
+                <div id="rnhGitDiffStage5Body" class="rnh-tpl-section-body rnh-git-diff-stage5-body">
+                    Вибери refs по сервісах, натисни “Зберегти шаблон”, потім “Git diff по шаблону”.
                 </div>
             </div>
         </div>
@@ -2809,6 +2827,7 @@ document.addEventListener('DOMContentLoaded', function () {
         { key: 'settings', label: 'Налаштування', sectionIndex: 0 },
         { key: 'services', label: 'Сервіси', sectionIndex: 1 },
         { key: 'scan', label: 'Сканування', sectionIndex: 2 },
+        { key: 'git', label: 'Git diff', sectionIndex: 3 },
         { key: 'output', label: 'Output', output: true }
     ];
 
@@ -2893,6 +2912,7 @@ document.addEventListener('DOMContentLoaded', function () {
             section.classList.toggle('rnh-tpl-v4-panel-settings', tab.key === 'settings');
             section.classList.toggle('rnh-tpl-v4-panel-services', tab.key === 'services');
             section.classList.toggle('rnh-tpl-v4-panel-scan', tab.key === 'scan');
+            section.classList.toggle('rnh-tpl-v4-panel-git', tab.key === 'git');
         });
 
         ensureOutputPanel(content);
@@ -3407,48 +3427,19 @@ function rnhTplTargetRefDisplayV13(item) {
 </script>
 <!-- RNH_TEMPLATES_MULTI_TARGET_REFS_V13_END -->
 
-@endsection
-
-
 <!-- RNH_TEMPLATES_GIT_DIFF_STAGE5_BEGIN -->
 <style>
-.rnh-git-diff-stage5-btn {
-    position: fixed;
-    right: 22px;
-    bottom: 22px;
-    z-index: 9999;
-    border: 0;
-    border-radius: 999px;
-    padding: 12px 18px;
-    font-weight: 700;
-    cursor: pointer;
-    box-shadow: 0 12px 30px rgba(15, 23, 42, .25);
-}
 .rnh-git-diff-stage5-panel {
-    position: fixed;
-    inset: 60px 40px 40px;
-    z-index: 10000;
-    background: #fff;
-    color: #111827;
-    border: 1px solid #d1d5db;
-    border-radius: 16px;
-    box-shadow: 0 25px 70px rgba(15, 23, 42, .35);
-    display: none;
-    flex-direction: column;
+    min-height: 0;
     overflow: hidden;
 }
-.rnh-git-diff-stage5-panel.is-open { display: flex; }
 .rnh-git-diff-stage5-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 14px 18px;
-    border-bottom: 1px solid #e5e7eb;
-    background: #f9fafb;
 }
 .rnh-git-diff-stage5-body {
-    padding: 14px 18px;
     overflow: auto;
     font-size: 13px;
 }
@@ -3458,15 +3449,12 @@ function rnhTplTargetRefDisplayV13(item) {
     align-items: center;
     flex-wrap: wrap;
 }
-.rnh-git-diff-stage5-actions button {
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    padding: 7px 10px;
-    background: #fff;
-    cursor: pointer;
+.rnh-git-diff-stage5-actions label {
+    color: #9db3c9;
+    font-size: 12px;
 }
 .rnh-git-diff-stage5-service {
-    border: 1px solid #e5e7eb;
+    border: 1px solid #26384b;
     border-radius: 12px;
     margin: 0 0 12px;
     overflow: hidden;
@@ -3474,7 +3462,7 @@ function rnhTplTargetRefDisplayV13(item) {
 .rnh-git-diff-stage5-service h4 {
     margin: 0;
     padding: 10px 12px;
-    background: #f3f4f6;
+    background: #1b2836;
     display: flex;
     justify-content: space-between;
     gap: 10px;
@@ -3484,110 +3472,106 @@ function rnhTplTargetRefDisplayV13(item) {
     padding: 10px 12px;
     overflow: auto;
     white-space: pre-wrap;
-    background: #fff;
-    border-top: 1px solid #e5e7eb;
+    background: #101b27;
+    border-top: 1px solid #26384b;
 }
 .rnh-git-diff-stage5-ok { color: #047857; }
 .rnh-git-diff-stage5-warn { color: #b45309; }
 .rnh-git-diff-stage5-error { color: #b91c1c; }
+#rnhGitSyncStage5BBtn[disabled] {
+    opacity: .65;
+    cursor: wait;
+}
 </style>
 <script>
 (() => {
-    const ensureGitDiffButtonStage5 = () => {
-        if (document.getElementById('rnhGitDiffStage5Btn')) return;
+    const escapeHtml = (value) => String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
 
-        const btn = document.createElement('button');
-        btn.id = 'rnhGitDiffStage5Btn';
-        btn.type = 'button';
-        btn.className = 'rnh-git-diff-stage5-btn';
-        btn.textContent = 'Git diff по шаблону';
-        btn.title = 'Спочатку вибери refs по сервісах і натисни “Зберегти шаблон”. Ця кнопка працює по збережених refs.';
-        document.body.appendChild(btn);
+    const csrfToken = () => {
+        try {
+            if (typeof rnhTplCsrfToken !== 'undefined' && rnhTplCsrfToken) return rnhTplCsrfToken;
+        } catch (e) {}
 
-        const panel = document.createElement('div');
-        panel.id = 'rnhGitDiffStage5Panel';
-        panel.className = 'rnh-git-diff-stage5-panel';
-        panel.innerHTML = `
-            <div class="rnh-git-diff-stage5-head">
-                <div>
-                    <strong>Git diff по шаблону</strong>
-                    <div style="font-size:12px;color:#6b7280">Працює по останньо збережених refs у шаблоні.</div>
-                </div>
-                <div class="rnh-git-diff-stage5-actions">
-                    <label style="font-size:12px"><input id="rnhGitDiffStage5Full" type="checkbox"> full patch</label>
-                    <button type="button" id="rnhGitDiffStage5Run">Запустити</button>
-                    <button type="button" id="rnhGitDiffStage5Copy">Copy JSON</button>
-                    <button type="button" id="rnhGitDiffStage5Close">Закрити</button>
-                </div>
-            </div>
-            <div id="rnhGitDiffStage5Body" class="rnh-git-diff-stage5-body">
-                Вибери refs по сервісах, натисни “Зберегти шаблон”, потім “Запустити”.
-            </div>
-        `;
-        document.body.appendChild(panel);
+        return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    };
 
-        let lastJson = null;
-
-        const escapeHtml = (value) => String(value ?? '')
-            .replaceAll('&', '&amp;')
-            .replaceAll('<', '&lt;')
-            .replaceAll('>', '&gt;')
-            .replaceAll('"', '&quot;')
-            .replaceAll("'", '&#039;');
-
-        const currentTemplate = () => {
-            try {
-                if (typeof rnhCurrentTemplate !== 'undefined' && rnhCurrentTemplate && rnhCurrentTemplate.id) {
-                    return rnhCurrentTemplate;
-                }
-            } catch (e) {}
-
-            try {
-                if (typeof rnhTemplates !== 'undefined' && Array.isArray(rnhTemplates) && rnhTemplates.length) {
-                    return rnhTemplates[0];
-                }
-            } catch (e) {}
-
-            return null;
-        };
-
-        const csrfToken = () => {
-            try {
-                if (typeof rnhTplCsrfToken !== 'undefined' && rnhTplCsrfToken) return rnhTplCsrfToken;
-            } catch (e) {}
-
-            return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-        };
-
-        const render = (json) => {
-            if (!json || !json.ok) {
-                return `<div class="rnh-git-diff-stage5-error">${escapeHtml(json?.message || json?.error || 'Помилка')}</div>`;
+    const currentTemplate = () => {
+        try {
+            if (typeof rnhCurrentTemplate !== 'undefined' && rnhCurrentTemplate && rnhCurrentTemplate.id) {
+                return rnhCurrentTemplate;
             }
+        } catch (e) {}
 
-            const chunks = [];
-            chunks.push(`<p><strong>${escapeHtml(json.template?.name || 'Template #' + json.template?.id)}</strong> — сервісів: ${escapeHtml(json.count)}</p>`);
+        try {
+            if (typeof rnhTemplates !== 'undefined' && Array.isArray(rnhTemplates) && rnhTemplates.length) {
+                return rnhTemplates[0];
+            }
+        } catch (e) {}
 
-            (json.results || []).forEach((service) => {
-                const stateCls = service.state === 'ok'
-                    ? 'rnh-git-diff-stage5-ok'
-                    : (service.state === 'skipped' ? 'rnh-git-diff-stage5-warn' : 'rnh-git-diff-stage5-error');
+        return null;
+    };
 
-                const refs = Array.isArray(service.target_refs) ? service.target_refs.join(', ') : '';
-                chunks.push(`<div class="rnh-git-diff-stage5-service">
-                    <h4>
-                        <span>${escapeHtml(service.service_name || 'service')} <small>#${escapeHtml(service.service_id || '')}</small></span>
-                        <span class="${stateCls}">${escapeHtml(service.state || '')}</span>
-                    </h4>
-                    <pre>base: ${escapeHtml(service.base_ref || '')}
+    const openGitPanel = () => {
+        if (typeof window.rnhTplActivateTabV4 === 'function') {
+            window.rnhTplActivateTabV4('git');
+        }
+    };
+
+    const serviceIdsFromTemplate = (tpl) => {
+        const ids = [];
+        const seen = new Set();
+
+        (tpl?.services || []).forEach((svc) => {
+            const included = svc?.included ?? svc?.is_required ?? true;
+            if (included === false || included === 0 || included === '0' || included === 'false') return;
+
+            const id = Number(svc?.service_id || svc?.id || 0);
+            if (!id || seen.has(id)) return;
+
+            seen.add(id);
+            ids.push({
+                id,
+                name: svc?.service_name || svc?.name || `service #${id}`,
+            });
+        });
+
+        return ids;
+    };
+
+    const renderGitDiff = (json) => {
+        if (!json || !json.ok) {
+            return `<div class="rnh-git-diff-stage5-error">${escapeHtml(json?.message || json?.error || 'Помилка')}</div>`;
+        }
+
+        const chunks = [];
+        chunks.push(`<p><strong>${escapeHtml(json.template?.name || 'Template #' + json.template?.id)}</strong> - сервісів: ${escapeHtml(json.count)}</p>`);
+
+        (json.results || []).forEach((service) => {
+            const stateCls = service.state === 'ok'
+                ? 'rnh-git-diff-stage5-ok'
+                : (service.state === 'skipped' ? 'rnh-git-diff-stage5-warn' : 'rnh-git-diff-stage5-error');
+
+            const refs = Array.isArray(service.target_refs) ? service.target_refs.join(', ') : '';
+            chunks.push(`<div class="rnh-git-diff-stage5-service">
+                <h4>
+                    <span>${escapeHtml(service.service_name || 'service')} <small>#${escapeHtml(service.service_id || '')}</small></span>
+                    <span class="${stateCls}">${escapeHtml(service.state || '')}</span>
+                </h4>
+                <pre>base: ${escapeHtml(service.base_ref || '')}
 target: ${escapeHtml(refs)}
 local: ${escapeHtml(service.local_path || '')}
 tags: ${escapeHtml((service.service_tags || []).join(', '))}
 ${service.message ? 'message: ' + escapeHtml(service.message) + "\n" : ''}${service.error ? 'error: ' + escapeHtml(service.error) + "\n" : ''}</pre>`);
 
-                (service.results || []).forEach((result) => {
-                    const files = (result.files || []).join("\n");
-                    const commits = (result.commits || []).join("\n");
-                    chunks.push(`<pre>target: ${escapeHtml(result.target_ref || '')}
+            (service.results || []).forEach((result) => {
+                const files = (result.files || []).join("\n");
+                const commits = (result.commits || []).join("\n");
+                chunks.push(`<pre>target: ${escapeHtml(result.target_ref || '')}
 ${escapeHtml(result.shortstat || 'no changes')}
 
 FILES:
@@ -3597,17 +3581,33 @@ COMMITS:
 ${escapeHtml(commits || '(no commits listed)')}
 
 ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
-                });
-
-                chunks.push(`</div>`);
             });
 
-            return chunks.join('');
-        };
+            chunks.push(`</div>`);
+        });
 
-        const run = async () => {
+        return chunks.join('');
+    };
+
+    const appendProgress = (body, html) => {
+        if (!body) return;
+        body.insertAdjacentHTML('beforeend', html);
+        body.scrollTop = body.scrollHeight;
+    };
+
+    const initGitActions = () => {
+        const diffBtn = document.getElementById('rnhGitDiffStage5Btn');
+        const syncBtn = document.getElementById('rnhGitSyncStage5BBtn');
+        const runBtn = document.getElementById('rnhGitDiffStage5Run');
+        const copyBtn = document.getElementById('rnhGitDiffStage5Copy');
+        const body = document.getElementById('rnhGitDiffStage5Body');
+        let lastJson = null;
+
+        const runDiff = async () => {
             const tpl = currentTemplate();
-            const body = document.getElementById('rnhGitDiffStage5Body');
+            openGitPanel();
+
+            if (!body) return;
 
             if (!tpl || !tpl.id) {
                 body.innerHTML = '<div class="rnh-git-diff-stage5-error">Не знайдено активний шаблон.</div>';
@@ -3637,189 +3637,15 @@ ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
                 }));
 
                 lastJson = json;
-                body.innerHTML = render(json);
+                body.innerHTML = renderGitDiff(json);
             } catch (error) {
                 body.innerHTML = `<div class="rnh-git-diff-stage5-error">${escapeHtml(error.message || error)}</div>`;
             }
         };
 
-        btn.addEventListener('click', () => {
-            panel.classList.add('is-open');
-        });
-
-        panel.querySelector('#rnhGitDiffStage5Run')?.addEventListener('click', run);
-        panel.querySelector('#rnhGitDiffStage5Close')?.addEventListener('click', () => panel.classList.remove('is-open'));
-        panel.querySelector('#rnhGitDiffStage5Copy')?.addEventListener('click', async () => {
-            if (!lastJson) return;
-            await navigator.clipboard.writeText(JSON.stringify(lastJson, null, 2));
-        });
-    };
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', ensureGitDiffButtonStage5);
-    } else {
-        ensureGitDiffButtonStage5();
-    }
-})();
-</script>
-<!-- RNH_TEMPLATES_GIT_DIFF_STAGE5_END -->
-
-
-<!-- RNH_TEMPLATES_GITDIFF_SYNC_STAGE5B_BEGIN -->
-<style>
-/* Move stage5 floating action buttons up so they do not overlap page edge/tooltips. */
-#rnhGitDiffStage5Btn.rnh-git-diff-stage5-btn {
-    right: 22px !important;
-    bottom: 86px !important;
-    top: auto !important;
-    max-width: calc(100vw - 48px);
-    white-space: nowrap;
-}
-
-#rnhGitSyncStage5BBtn {
-    position: fixed;
-    right: 230px;
-    bottom: 86px;
-    z-index: 9999;
-    border: 0;
-    border-radius: 999px;
-    padding: 12px 18px;
-    font-weight: 700;
-    cursor: pointer;
-    box-shadow: 0 12px 30px rgba(15, 23, 42, .25);
-    background: #0f766e;
-    color: #fff;
-    max-width: calc(100vw - 48px);
-    white-space: nowrap;
-}
-
-#rnhGitSyncStage5BBtn[disabled] {
-    opacity: .65;
-    cursor: wait;
-}
-
-@media (max-width: 900px) {
-    #rnhGitDiffStage5Btn.rnh-git-diff-stage5-btn {
-        right: 14px !important;
-        bottom: 74px !important;
-        padding: 10px 12px;
-        font-size: 12px;
-    }
-
-    #rnhGitSyncStage5BBtn {
-        right: 14px;
-        bottom: 122px;
-        padding: 10px 12px;
-        font-size: 12px;
-    }
-}
-</style>
-<script>
-(() => {
-    const waitFor = (predicate, tries = 80) => new Promise((resolve) => {
-        const tick = () => {
-            const value = predicate();
-            if (value || tries <= 0) {
-                resolve(value || null);
-                return;
-            }
-            tries -= 1;
-            setTimeout(tick, 100);
-        };
-        tick();
-    });
-
-    const escapeHtmlStage5B = (value) => String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-
-    const csrfTokenStage5B = () => {
-        try {
-            if (typeof rnhTplCsrfToken !== 'undefined' && rnhTplCsrfToken) return rnhTplCsrfToken;
-        } catch (e) {}
-
-        return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-    };
-
-    const currentTemplateStage5B = () => {
-        try {
-            if (typeof rnhCurrentTemplate !== 'undefined' && rnhCurrentTemplate && rnhCurrentTemplate.id) {
-                return rnhCurrentTemplate;
-            }
-        } catch (e) {}
-
-        try {
-            if (typeof rnhTemplates !== 'undefined' && Array.isArray(rnhTemplates) && rnhTemplates.length) {
-                return rnhTemplates[0];
-            }
-        } catch (e) {}
-
-        return null;
-    };
-
-    const serviceIdsFromTemplateStage5B = (tpl) => {
-        const ids = [];
-        const seen = new Set();
-
-        (tpl?.services || []).forEach((svc) => {
-            const included = svc?.included ?? svc?.is_required ?? true;
-            if (included === false || included === 0 || included === '0' || included === 'false') return;
-
-            const id = Number(svc?.service_id || svc?.id || 0);
-            if (!id || seen.has(id)) return;
-
-            seen.add(id);
-            ids.push({
-                id,
-                name: svc?.service_name || svc?.name || `service #${id}`,
-            });
-        });
-
-        return ids;
-    };
-
-    const panelBodyStage5B = async () => {
-        const diffBtn = await waitFor(() => document.getElementById('rnhGitDiffStage5Btn'));
-        const panel = document.getElementById('rnhGitDiffStage5Panel');
-
-        if (panel) {
-            panel.classList.add('is-open');
-            return document.getElementById('rnhGitDiffStage5Body');
-        }
-
-        if (diffBtn) {
-            diffBtn.click();
-            return document.getElementById('rnhGitDiffStage5Body');
-        }
-
-        return null;
-    };
-
-    const appendProgressStage5B = (body, html) => {
-        if (!body) return;
-        body.insertAdjacentHTML('beforeend', html);
-        body.scrollTop = body.scrollHeight;
-    };
-
-    const ensureSyncButtonStage5B = async () => {
-        await waitFor(() => document.getElementById('rnhGitDiffStage5Btn'));
-
-        if (document.getElementById('rnhGitSyncStage5BBtn')) return;
-
-        const btn = document.createElement('button');
-        btn.id = 'rnhGitSyncStage5BBtn';
-        btn.type = 'button';
-        btn.textContent = 'Оновити Git refs';
-        btn.title = 'Оновити refs/commits для сервісів поточного шаблону. Після цього збережи шаблон і запускай Git diff.';
-        document.body.appendChild(btn);
-
-        btn.addEventListener('click', async () => {
-            const tpl = currentTemplateStage5B();
-            const services = serviceIdsFromTemplateStage5B(tpl);
-            const token = csrfTokenStage5B();
+        const syncRefs = async () => {
+            const tpl = currentTemplate();
+            const services = serviceIdsFromTemplate(tpl);
 
             if (!tpl || !tpl.id) {
                 alert('Не знайдено активний шаблон.');
@@ -3834,18 +3660,19 @@ ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
             const ok = confirm(`Оновити Git refs для ${services.length} сервісів поточного шаблону? Це може зайняти час.`);
             if (!ok) return;
 
-            const body = await panelBodyStage5B();
+            openGitPanel();
+
             if (body) {
-                body.innerHTML = `<p><strong>Оновлюю Git refs для шаблону:</strong> ${escapeHtmlStage5B(tpl.name || tpl.id)}</p>`;
+                body.innerHTML = `<p><strong>Оновлюю Git refs для шаблону:</strong> ${escapeHtml(tpl.name || tpl.id)}</p>`;
             }
 
-            btn.disabled = true;
-            btn.textContent = 'Оновлюю...';
+            syncBtn.disabled = true;
+            syncBtn.textContent = 'Оновлюю...';
 
             const results = [];
 
             for (const svc of services) {
-                appendProgressStage5B(body, `<p>⏳ ${escapeHtmlStage5B(svc.name)} (#${svc.id})...</p>`);
+                appendProgress(body, `<p>${escapeHtml(svc.name)} (#${svc.id})...</p>`);
 
                 try {
                     const response = await fetch(`/rnh/services/${encodeURIComponent(svc.id)}/sync`, {
@@ -3853,7 +3680,7 @@ ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
                         headers: {
                             'Accept': 'application/json',
                             'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': token,
+                            'X-CSRF-TOKEN': csrfToken(),
                         },
                         body: JSON.stringify({ source: 'rnh.templates.stage5b' }),
                     });
@@ -3874,9 +3701,9 @@ ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
                         response: json || text.slice(0, 500),
                     });
 
-                    appendProgressStage5B(
+                    appendProgress(
                         body,
-                        `<p class="${success ? 'rnh-git-diff-stage5-ok' : 'rnh-git-diff-stage5-error'}">${success ? '✅' : '❌'} ${escapeHtmlStage5B(svc.name)} — HTTP ${response.status}</p>`
+                        `<p class="${success ? 'rnh-git-diff-stage5-ok' : 'rnh-git-diff-stage5-error'}">${success ? 'OK' : 'FAIL'} ${escapeHtml(svc.name)} - HTTP ${response.status}</p>`
                     );
                 } catch (error) {
                     results.push({
@@ -3886,9 +3713,9 @@ ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
                         error: error.message || String(error),
                     });
 
-                    appendProgressStage5B(
+                    appendProgress(
                         body,
-                        `<p class="rnh-git-diff-stage5-error">❌ ${escapeHtmlStage5B(svc.name)} — ${escapeHtmlStage5B(error.message || error)}</p>`
+                        `<p class="rnh-git-diff-stage5-error">FAIL ${escapeHtml(svc.name)} - ${escapeHtml(error.message || error)}</p>`
                     );
                 }
             }
@@ -3896,21 +3723,48 @@ ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
             const okCount = results.filter((item) => item.ok).length;
             const failCount = results.length - okCount;
 
-            appendProgressStage5B(body, `<hr><p><strong>Готово:</strong> OK ${okCount}, помилок ${failCount}.</p>`);
-            appendProgressStage5B(body, `<pre>${escapeHtmlStage5B(JSON.stringify(results, null, 2))}</pre>`);
-            appendProgressStage5B(body, `<p>Тепер натисни <strong>Зберегти шаблон</strong>, щоб актуальні refs/commits були зафіксовані в шаблоні, потім запускай <strong>Git diff по шаблону</strong>.</p>`);
+            appendProgress(body, `<hr><p><strong>Готово:</strong> OK ${okCount}, помилок ${failCount}.</p>`);
+            appendProgress(body, `<pre>${escapeHtml(JSON.stringify(results, null, 2))}</pre>`);
+            appendProgress(body, `<p>Тепер натисни <strong>Зберегти шаблон</strong>, щоб актуальні refs/commits були зафіксовані в шаблоні, потім запускай <strong>Git diff по шаблону</strong>.</p>`);
 
-            btn.disabled = false;
-            btn.textContent = 'Оновити Git refs';
-        });
+            syncBtn.disabled = false;
+            syncBtn.textContent = 'Оновити Git refs';
+        };
+
+        if (diffBtn && diffBtn.dataset.rnhGitDiffStage5 !== '1') {
+            diffBtn.dataset.rnhGitDiffStage5 = '1';
+            diffBtn.addEventListener('click', runDiff);
+        }
+
+        if (runBtn && runBtn.dataset.rnhGitDiffStage5Run !== '1') {
+            runBtn.dataset.rnhGitDiffStage5Run = '1';
+            runBtn.addEventListener('click', runDiff);
+        }
+
+        if (copyBtn && copyBtn.dataset.rnhGitDiffStage5Copy !== '1') {
+            copyBtn.dataset.rnhGitDiffStage5Copy = '1';
+            copyBtn.addEventListener('click', async () => {
+                if (!lastJson) return;
+                await navigator.clipboard.writeText(JSON.stringify(lastJson, null, 2));
+            });
+        }
+
+        if (syncBtn && syncBtn.dataset.rnhGitSyncStage5B !== '1') {
+            syncBtn.dataset.rnhGitSyncStage5B = '1';
+            syncBtn.addEventListener('click', syncRefs);
+        }
     };
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', ensureSyncButtonStage5B);
+        document.addEventListener('DOMContentLoaded', initGitActions);
     } else {
-        ensureSyncButtonStage5B();
+        initGitActions();
     }
 })();
 </script>
+<!-- RNH_TEMPLATES_GIT_DIFF_STAGE5_END -->
+<!-- RNH_TEMPLATES_GITDIFF_SYNC_STAGE5B_BEGIN -->
 <!-- RNH_TEMPLATES_GITDIFF_SYNC_STAGE5B_END -->
+
+@endsection
 
