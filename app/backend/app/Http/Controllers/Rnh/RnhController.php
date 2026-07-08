@@ -1807,7 +1807,7 @@ public function releases()
                 $service = null;
 
                 if (! empty($rowArr['service_id'])) {
-                    $service = $catalog->byId((int) $rowArr['service_id']);
+                    $service = $catalog->findById((int) $rowArr['service_id']);
                 }
 
                 if (! $service) {

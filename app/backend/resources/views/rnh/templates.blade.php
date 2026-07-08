@@ -1953,7 +1953,6 @@ async function rnhTplSaveNotice() {
             base_commit: item.base_commit || item.baseline_sha || item.base_commit_sha || '',
             target_type: item.target_type || item.target_ref_type || 'branch',
             target_ref: (Array.isArray(item.target_ref_names) && item.target_ref_names.length ? item.target_ref_names[0] : (item.target_ref_name || item.target_branch || item.target_ref || rnhCurrentTemplate.default_target || 'origin/dev')),
-            target_ref_names: (Array.isArray(item.target_ref_names) && item.target_ref_names.length ? item.target_ref_names : [item.target_ref_name || item.target_branch || item.target_ref || rnhCurrentTemplate.default_target || 'origin/dev'].filter(Boolean)),
             // RNH_V13B_TEMPLATE_TARGET_REF_NAMES_PAYLOAD
             target_ref_names: (Array.isArray(item.target_ref_names) && item.target_ref_names.length ? item.target_ref_names : [item.target_ref_name || item.target_branch || item.target_ref || rnhCurrentTemplate.default_target || 'origin/dev'].filter(Boolean)),
             target_commit: item.target_commit || item.target_commit_sha || '',

@@ -33,6 +33,11 @@ class ServiceCatalogViewModel
         return $items;
     }
 
+    public function findById(int $id): ?array
+    {
+        return $this->byId()[$id] ?? null;
+    }
+
     public function byNameSlugIndex(): array
     {
         $index = [];
