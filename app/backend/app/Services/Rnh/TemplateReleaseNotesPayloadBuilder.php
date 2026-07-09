@@ -26,7 +26,7 @@ class TemplateReleaseNotesPayloadBuilder
             $state = (string) ($serviceResult['state'] ?? 'unknown');
             $name = $this->clean((string) ($serviceResult['service_name'] ?? 'service'), $includeTechnicalData);
             $service = [
-                'service_id' => (int) ($serviceResult['service_id'] ?? 0),
+                'service_id' => $this->serviceId($serviceResult),
                 'service' => $name,
                 'service_name' => $name,
                 'name' => $name,
@@ -101,7 +101,7 @@ class TemplateReleaseNotesPayloadBuilder
             'template' => [
                 'id' => (int) ($template['id'] ?? 0),
                 'name' => $this->clean((string) ($template['name'] ?? ''), $includeTechnicalData),
-                'code' => $this->clean((string) ($template['code'] ?? ''), $includeTechnicalData),
+                'code' => $this->clean($this->templateCode($template), $includeTechnicalData),
                 'release_name' => $this->clean((string) ($template['release_name'] ?? ''), $includeTechnicalData),
             ],
             'summary' => [
@@ -134,6 +134,50 @@ class TemplateReleaseNotesPayloadBuilder
         }
 
         return array_values(array_filter($sample, static fn ($item) => $item !== ''));
+    }
+
+    private function templateCode(array $template): string
+    {
+        foreach (['code', 'slug', 'template_code'] as $key) {
+            $value = trim((string) ($template[$key] ?? ''));
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        $name = preg_replace('/\s+\d+(?:\.\d+)+(?:\s.*)?$/', '', trim((string) ($template['name'] ?? ''))) ?? '';
+        $releaseName = trim((string) ($template['release_name'] ?? ''));
+        $source = trim($name . ' ' . $releaseName);
+
+        return $source !== '' ? $this->slug($source) : '';
+    }
+
+    private function serviceId(array $serviceResult): int
+    {
+        $service = is_array($serviceResult['service'] ?? null) ? $serviceResult['service'] : [];
+
+        foreach ([
+            $serviceResult['service_id'] ?? null,
+            $serviceResult['id'] ?? null,
+            $serviceResult['canonical_service_id'] ?? null,
+            $service['service_id'] ?? null,
+            $service['id'] ?? null,
+        ] as $value) {
+            if (is_numeric($value) && (int) $value > 0) {
+                return (int) $value;
+            }
+        }
+
+        return 0;
+    }
+
+    private function slug(string $value): string
+    {
+        $value = preg_replace('/[^A-Za-z0-9]+/', '-', $value) ?? '';
+        $value = strtolower(trim($value, '-'));
+
+        return $value;
     }
 
     private function filesChangedCount(string $shortstat, int $fallback): int
