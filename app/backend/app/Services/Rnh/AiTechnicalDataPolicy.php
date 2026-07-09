@@ -70,7 +70,11 @@ class AiTechnicalDataPolicy
 
         if (! $includeTechnicalData) {
             $value = preg_replace('#https?://[^\s<>"\']+#i', '[url-redacted]', $value) ?? $value;
-            $value = preg_replace('/\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/i', '[domain-redacted]', $value) ?? $value;
+            $value = preg_replace('/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i', '[email-redacted]', $value) ?? $value;
+            $value = preg_replace('/\b(?:github\.com|gitlab\.com|bitbucket\.org)\b/i', '[domain-redacted]', $value) ?? $value;
+            $value = preg_replace('/\b(?:gitlab|github|bitbucket|registry|nexus|harbor|artifactory|docker|git)[a-z0-9-]*(?:\.[a-z0-9-]+)+\b/i', '[domain-redacted]', $value) ?? $value;
+            $value = preg_replace('/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:internal|local|lan|corp)\b/i', '[domain-redacted]', $value) ?? $value;
+            $value = preg_replace('/\b(?:[a-z0-9-]+\.){2,}[a-z]{2,}\b/i', '[domain-redacted]', $value) ?? $value;
             $value = preg_replace('#(?:^|\s)/(?:app|var|home|srv|opt|tmp|data)/[^\s<>"\']+#i', ' [path-redacted]', $value) ?? $value;
             $value = preg_replace('/\b[0-9a-f]{40}\b/i', '[sha-redacted]', $value) ?? $value;
         }
