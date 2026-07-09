@@ -26,13 +26,15 @@ class TemplateReleaseNotesPayloadBuilder
             $state = (string) ($serviceResult['state'] ?? 'unknown');
             $name = $this->clean((string) ($serviceResult['service_name'] ?? 'service'), $includeTechnicalData);
             $service = [
+                'service_id' => (int) ($serviceResult['service_id'] ?? 0),
                 'service' => $name,
+                'service_name' => $name,
+                'name' => $name,
                 'state' => $this->clean($state, $includeTechnicalData),
                 'targets' => [],
             ];
 
             if ($includeTechnicalData) {
-                $service['service_id'] = (int) ($serviceResult['service_id'] ?? 0);
                 $service['git_url'] = $this->clean((string) ($serviceResult['git_url'] ?? ''), true);
                 $service['local_path'] = $this->clean((string) ($serviceResult['local_path'] ?? ''), true);
                 $service['base_ref'] = $this->clean((string) ($serviceResult['base_ref'] ?? ''), true);
@@ -99,6 +101,7 @@ class TemplateReleaseNotesPayloadBuilder
             'template' => [
                 'id' => (int) ($template['id'] ?? 0),
                 'name' => $this->clean((string) ($template['name'] ?? ''), $includeTechnicalData),
+                'code' => $this->clean((string) ($template['code'] ?? ''), $includeTechnicalData),
                 'release_name' => $this->clean((string) ($template['release_name'] ?? ''), $includeTechnicalData),
             ],
             'summary' => [
