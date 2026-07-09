@@ -1533,6 +1533,10 @@ let rnhCurrentTemplate = null;
 let rnhServiceFilter = 'active';
 let rnhTplCurrentRefsIndex = null;
 
+function rnhTplCsrfHeaderToken() {
+    return rnhTplCsrfToken || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+}
+
 function rnhTplClone(value) {
     return JSON.parse(JSON.stringify(value));
 }
@@ -1990,14 +1994,17 @@ async function rnhTplSaveNotice() {
     rnhTplNotice('Зберігаю...');
 
     try {
+        const csrfToken = rnhTplCsrfHeaderToken();
+
         const response = await fetch(rnhTplSaveUrl, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'X-CSRF-TOKEN': rnhTplCsrfToken,
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest',
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({ ...payload, _token: csrfToken }),
         });
 
         const result = await response.json().catch(() => ({}));
