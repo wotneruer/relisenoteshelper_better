@@ -217,9 +217,10 @@ class ServicesController extends Controller
             $repoPath,
             'fetch',
             '--prune',
-            '--tags',
+            '--force',
             $authUrl,
             '+refs/heads/*:refs/remotes/origin/*',
+            '+refs/tags/*:refs/tags/*',
         ], null, $env, $secrets);
 
         if ($fetch['exit'] !== 0) {
@@ -2151,9 +2152,10 @@ class ServicesController extends Controller
             $repoPath,
             'fetch',
             '--prune',
-            '--tags',
+            '--force',
             $authUrl,
             '+refs/heads/*:refs/remotes/origin/*',
+            '+refs/tags/*:refs/tags/*',
         ], null, $env, $secrets);
 
         if ($fetch['exit'] !== 0) {
