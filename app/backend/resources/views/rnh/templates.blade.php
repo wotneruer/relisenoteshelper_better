@@ -1372,6 +1372,8 @@
                         </div>
                     </div>
 
+                    <div id="rnhTplScanSummary" class="rnh-tpl-muted" style="margin: 0 0 8px;">Scan ще не виконано.</div>
+
                     <div class="rnh-tpl-table-wrap" style="max-height: 185px;">
                         <table class="rnh-tpl-table">
                             <thead>
@@ -2172,19 +2174,22 @@ function rnhTplScanShortstatFiles(shortstat, fallback) {
 }
 
 function rnhTplScanServiceSummary(service) {
-    const targetResults = Array.isArray(service.results) ? service.results : [];
+    const targetResults = Array.isArray(service.targets)
+        ? service.targets
+        : (Array.isArray(service.results) ? service.results : []);
     let commitCount = 0;
     let fileCount = 0;
     let hasChanged = false;
     let hasTargetError = false;
 
     targetResults.forEach((target) => {
-        const commits = Array.isArray(target.commits) ? target.commits : [];
-        const files = Array.isArray(target.files) ? target.files : [];
-        const targetFiles = rnhTplScanShortstatFiles(target.shortstat, files.length);
-        commitCount += commits.length;
+        const commits = Array.isArray(target.commits) ? target.commits : (Array.isArray(target.commits_sample) ? target.commits_sample : []);
+        const files = Array.isArray(target.files) ? target.files : (Array.isArray(target.files_sample) ? target.files_sample : []);
+        const targetCommits = Number(target.commit_count ?? commits.length ?? 0);
+        const targetFiles = Number(target.file_count ?? rnhTplScanShortstatFiles(target.shortstat, files.length));
+        commitCount += targetCommits;
         fileCount += targetFiles;
-        hasChanged = hasChanged || commits.length > 0 || targetFiles > 0;
+        hasChanged = hasChanged || String(target.state || '') === 'changed' || targetCommits > 0 || targetFiles > 0;
         hasTargetError = hasTargetError || String(target.state || '') === 'error';
     });
 
@@ -2208,15 +2213,17 @@ function rnhTplScanStateClass(state) {
 }
 
 function rnhTplRenderScanDetails(service) {
-    const targets = Array.isArray(service.results) ? service.results : [];
+    const targets = Array.isArray(service.targets)
+        ? service.targets
+        : (Array.isArray(service.results) ? service.results : []);
     if (!targets.length) return rnhTplEscape(rnhTplSafeScanText(service.note || ''));
 
     const chunks = targets.map((target) => {
-        const commits = (Array.isArray(target.commits) ? target.commits : [])
+        const commits = (Array.isArray(target.commits_sample) ? target.commits_sample : (Array.isArray(target.commits) ? target.commits : []))
             .slice(0, 5)
             .map((item) => `<li>${rnhTplEscape(rnhTplSafeScanText(item))}</li>`)
             .join('');
-        const files = (Array.isArray(target.files) ? target.files : [])
+        const files = (Array.isArray(target.files_sample) ? target.files_sample : (Array.isArray(target.files) ? target.files : []))
             .slice(0, 8)
             .map((item) => `<li>${rnhTplEscape(rnhTplSafeScanText(item))}</li>`)
             .join('');
@@ -2226,7 +2233,7 @@ function rnhTplRenderScanDetails(service) {
 
         return `
             <div style="margin-bottom: 8px;">
-                <strong>${rnhTplEscape(rnhTplSafeScanText(target.target_ref || 'target'))}</strong>
+                <strong>${rnhTplEscape(rnhTplSafeScanText(target.target || target.target_ref || 'target'))}</strong>
                 <div class="rnh-tpl-muted">${rnhTplEscape(rnhTplSafeScanText(target.shortstat || 'no changes'))}</div>
                 ${error}
                 ${commits ? `<div class="rnh-tpl-muted">Commits</div><ul>${commits}</ul>` : ''}
@@ -2238,15 +2245,44 @@ function rnhTplRenderScanDetails(service) {
     return `<details><summary>Деталі</summary>${chunks}</details>`;
 }
 
+function rnhTplRenderScanSummary(summary) {
+    const el = document.getElementById('rnhTplScanSummary');
+    if (!el) return;
+
+    if (!summary || typeof summary !== 'object') {
+        el.textContent = 'Scan ще не виконано.';
+        return;
+    }
+
+    const pairs = [
+        ['services', summary.services_total],
+        ['ok', summary.services_ok],
+        ['changed', summary.services_changed],
+        ['unchanged', summary.services_unchanged],
+        ['skipped', summary.services_skipped],
+        ['errors', summary.services_error],
+        ['targets', summary.targets_total],
+        ['commits', summary.commits_total],
+        ['files', summary.files_total],
+    ];
+
+    el.textContent = pairs
+        .map(([label, value]) => `${label}: ${Number(value || 0)}`)
+        .join(' · ');
+}
+
 function rnhTplRenderScanResults(json) {
     const body = document.getElementById('rnhTplScanBody');
 
     if (!json || !json.ok) {
+        rnhTplRenderScanSummary(null);
         body.innerHTML = `<tr><td colspan="9" class="rnh-tpl-muted">${rnhTplEscape(rnhTplSafeScanText(json?.message || json?.error || 'Не вдалося виконати scan.'))}</td></tr>`;
         return;
     }
 
-    const results = Array.isArray(json.results) ? json.results : [];
+    const payload = json.payload && typeof json.payload === 'object' ? json.payload : json;
+    const results = Array.isArray(payload.services) ? payload.services : (Array.isArray(json.results) ? json.results : []);
+    rnhTplRenderScanSummary(payload.summary || null);
 
     if (!results.length) {
         body.innerHTML = '<tr><td colspan="9" class="rnh-tpl-muted">Scan не повернув сервісів.</td></tr>';
@@ -2255,17 +2291,25 @@ function rnhTplRenderScanResults(json) {
 
     body.innerHTML = results.map((service) => {
         const summary = rnhTplScanServiceSummary(service);
-        const targets = Array.isArray(service.target_refs) ? service.target_refs.join(', ') : '';
-        const targetShortstats = (Array.isArray(service.results) ? service.results : [])
+        const targetRows = Array.isArray(service.targets)
+            ? service.targets
+            : (Array.isArray(service.results) ? service.results : []);
+        const targets = targetRows.length
+            ? targetRows.map((target) => target.target || target.target_ref || '').filter(Boolean).join(', ')
+            : (Array.isArray(service.target_refs) ? service.target_refs.join(', ') : '');
+        const targetShortstats = targetRows
             .map((target) => target.shortstat || '')
             .filter(Boolean)
             .join(' | ');
-        const warning = service.message || service.error || (summary.hasTargetError ? 'Є помилки по target refs.' : '');
+        const warnings = Array.isArray(service.warnings)
+            ? service.warnings.map((item) => item.reason || item.message || '').filter(Boolean).join(' | ')
+            : '';
+        const warning = warnings || service.message || service.error || (summary.hasTargetError ? 'Є помилки по target refs.' : '');
 
         return `
             <tr>
                 <td>${service.included === false ? '' : '✓'}</td>
-                <td>${rnhTplEscape(rnhTplSafeScanText(service.service_name || service.name || 'service'))}</td>
+                <td>${rnhTplEscape(rnhTplSafeScanText(service.service || service.service_name || service.name || 'service'))}</td>
                 <td><span class="rnh-tpl-status ${rnhTplScanStateClass(summary.state)}">${rnhTplEscape(summary.state)}</span></td>
                 <td>${summary.commitCount}</td>
                 <td>${summary.fileCount}</td>
@@ -2291,7 +2335,7 @@ async function rnhTplScanDraft() {
     rnhTplNotice('Сканую зміни по сервісах...');
 
     try {
-        const response = await fetch(`/rnh/templates/${encodeURIComponent(rnhCurrentTemplate.id)}/git-diffs`, {
+        const response = await fetch(`/rnh/templates/${encodeURIComponent(rnhCurrentTemplate.id)}/scan`, {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
@@ -2301,8 +2345,8 @@ async function rnhTplScanDraft() {
             },
             body: JSON.stringify({
                 full: false,
-                max_commits: 200,
-                max_files: 400,
+                max_commits_per_service: 50,
+                max_files_per_target: 100,
             }),
         });
 
@@ -2318,9 +2362,10 @@ async function rnhTplScanDraft() {
             return;
         }
 
-        const results = Array.isArray(json.results) ? json.results : [];
+        const payload = json.payload && typeof json.payload === 'object' ? json.payload : json;
+        const results = Array.isArray(payload.services) ? payload.services : [];
         const changed = results.filter((service) => rnhTplScanServiceSummary(service).state === 'changed').length;
-        const failed = results.filter((service) => ['error', 'warning'].includes(rnhTplScanServiceSummary(service).state)).length;
+        const failed = results.filter((service) => ['error', 'warning', 'skipped'].includes(rnhTplScanServiceSummary(service).state)).length;
         rnhTplNotice(`Scan завершено. Змінено сервісів: ${changed}, з попередженнями/помилками: ${failed}.`, failed ? 'warn' : '');
     } catch (error) {
         body.innerHTML = `<tr><td colspan="9" class="rnh-tpl-muted">${rnhTplEscape(rnhTplSafeScanText(error.message || error))}</td></tr>`;
