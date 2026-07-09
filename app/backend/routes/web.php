@@ -78,6 +78,7 @@ Route::get('/rnh/output/download', [\App\Http\Controllers\Rnh\RnhController::cla
 
 Route::post('/rnh/templates/save', [\App\Http\Controllers\Rnh\RnhController::class, 'saveTemplate'])->name('rnh.templates.save');
 Route::post('/rnh/templates/{id}/git-diffs', [\App\Http\Controllers\Rnh\RnhController::class, 'templateGitDiffs'])->name('rnh.templates.git-diffs');
+Route::post('/rnh/templates/{id}/scan', [\App\Http\Controllers\Rnh\RnhController::class, 'templateScan'])->name('rnh.templates.scan');
 Route::post('/rnh/templates/{id}/release-notes/payload', [\App\Http\Controllers\Rnh\RnhController::class, 'templateReleaseNotesPayload'])->name('rnh.templates.release-notes.payload');
 Route::delete('/rnh/templates/{id}', [\App\Http\Controllers\Rnh\RnhController::class, 'deleteTemplate'])->name('rnh.templates.delete');
 

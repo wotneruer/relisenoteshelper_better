@@ -17,6 +17,7 @@ use App\Services\Rnh\GitRunner;
 use App\Services\Rnh\AiTechnicalDataPolicy;
 use App\Services\Rnh\ServiceCatalogViewModel;
 use App\Services\Rnh\TemplateReleaseNotesPayloadBuilder;
+use App\Services\Rnh\TemplateScanPayloadBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -2093,6 +2094,47 @@ public function releases()
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+
+    public function templateScan(
+        Request $request,
+        int $id,
+        AiTechnicalDataPolicy $privacy,
+        TemplateScanPayloadBuilder $builder
+    ) {
+        $maxCommits = max(1, min(500, (int) $request->input('max_commits_per_service', $request->input('max_commits', 50))));
+        $maxFiles = max(1, min(1000, (int) $request->input('max_files_per_target', $request->input('max_files', 100))));
+
+        $diffRequest = Request::create('/rnh/templates/' . $id . '/git-diffs', 'POST', [
+            'full' => false,
+            'max_commits' => $maxCommits,
+            'max_files' => $maxFiles,
+            'max_patch_bytes' => 0,
+        ]);
+
+        $diffResponse = $this->templateGitDiffs($diffRequest, $id);
+        $diffPayload = method_exists($diffResponse, 'getData')
+            ? (array) $diffResponse->getData(true)
+            : [];
+
+        if ($diffResponse->getStatusCode() >= 400 || ! (bool) ($diffPayload['ok'] ?? false)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Не вдалося зібрати scan payload для шаблону.',
+                'error' => $privacy->sanitizeString((string) ($diffPayload['message'] ?? $diffPayload['error'] ?? ''), false),
+            ], $diffResponse->getStatusCode() >= 400 ? $diffResponse->getStatusCode() : 500);
+        }
+
+        $payload = $builder->build($diffPayload, $privacy->sendTechnicalData(), [
+            'max_commits_per_service' => $maxCommits,
+            'max_files_per_target' => $maxFiles,
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'payload' => $payload,
+        ]);
     }
 
 
