@@ -1365,6 +1365,11 @@
                             <label>Буде сформовано</label>
                             <div id="rnhTplScanReleaseName" class="rnh-tpl-release-preview"></div>
                         </div>
+
+                        <div class="rnh-tpl-field">
+                            <label>&nbsp;</label>
+                            <button type="button" class="rnh-tpl-btn primary" onclick="rnhTplScanDraft()">Сканувати зміни</button>
+                        </div>
                     </div>
 
                     <div class="rnh-tpl-table-wrap" style="max-height: 185px;">
@@ -2153,38 +2158,173 @@ async function rnhTplSaveNotice() {
     }
 }
 
-function rnhTplScanDraft() {
-    if (!rnhCurrentTemplate) return;
+function rnhTplSafeScanText(value) {
+    return String(value ?? '')
+        .replace(/https?:\/\/\S+/gi, '[url]')
+        .replace(/(?:^|\s)\/(?:app|var|home|srv|opt|tmp|data)\/\S+/gi, ' [path]')
+        .replace(/\b[0-9a-f]{40}\b/gi, '[sha]');
+}
 
-    const version = document.getElementById('rnhTplScanVersion').value.trim();
-    const services = rnhCurrentTemplate.services || [];
+function rnhTplScanShortstatFiles(shortstat, fallback) {
+    const match = String(shortstat || '').match(/(\d+)\s+files?\s+changed/i);
+    return match ? Number(match[1]) : Number(fallback || 0);
+}
+
+function rnhTplScanServiceSummary(service) {
+    const targetResults = Array.isArray(service.results) ? service.results : [];
+    let commitCount = 0;
+    let fileCount = 0;
+    let hasChanged = false;
+    let hasTargetError = false;
+
+    targetResults.forEach((target) => {
+        const commits = Array.isArray(target.commits) ? target.commits : [];
+        const files = Array.isArray(target.files) ? target.files : [];
+        const targetFiles = rnhTplScanShortstatFiles(target.shortstat, files.length);
+        commitCount += commits.length;
+        fileCount += targetFiles;
+        hasChanged = hasChanged || commits.length > 0 || targetFiles > 0;
+        hasTargetError = hasTargetError || String(target.state || '') === 'error';
+    });
+
+    let state = String(service.state || 'ok');
+
+    if (state === 'ok') {
+        state = hasTargetError ? 'warning' : (hasChanged ? 'changed' : 'unchanged');
+    }
+
+    return {
+        state,
+        commitCount,
+        fileCount,
+        hasTargetError,
+    };
+}
+
+function rnhTplScanStateClass(state) {
+    if (['changed', 'ok'].includes(state)) return 'valid';
+    return 'warn';
+}
+
+function rnhTplRenderScanDetails(service) {
+    const targets = Array.isArray(service.results) ? service.results : [];
+    if (!targets.length) return rnhTplEscape(rnhTplSafeScanText(service.note || ''));
+
+    const chunks = targets.map((target) => {
+        const commits = (Array.isArray(target.commits) ? target.commits : [])
+            .slice(0, 5)
+            .map((item) => `<li>${rnhTplEscape(rnhTplSafeScanText(item))}</li>`)
+            .join('');
+        const files = (Array.isArray(target.files) ? target.files : [])
+            .slice(0, 8)
+            .map((item) => `<li>${rnhTplEscape(rnhTplSafeScanText(item))}</li>`)
+            .join('');
+        const error = target.error || target.message
+            ? `<div class="rnh-tpl-muted">${rnhTplEscape(rnhTplSafeScanText(target.message || target.error))}</div>`
+            : '';
+
+        return `
+            <div style="margin-bottom: 8px;">
+                <strong>${rnhTplEscape(rnhTplSafeScanText(target.target_ref || 'target'))}</strong>
+                <div class="rnh-tpl-muted">${rnhTplEscape(rnhTplSafeScanText(target.shortstat || 'no changes'))}</div>
+                ${error}
+                ${commits ? `<div class="rnh-tpl-muted">Commits</div><ul>${commits}</ul>` : ''}
+                ${files ? `<div class="rnh-tpl-muted">Files</div><ul>${files}</ul>` : ''}
+            </div>
+        `;
+    }).join('');
+
+    return `<details><summary>Деталі</summary>${chunks}</details>`;
+}
+
+function rnhTplRenderScanResults(json) {
     const body = document.getElementById('rnhTplScanBody');
 
-    if (!version) {
-        rnhTplNotice('Спочатку введи версію релізу.', 'warn');
+    if (!json || !json.ok) {
+        body.innerHTML = `<tr><td colspan="9" class="rnh-tpl-muted">${rnhTplEscape(rnhTplSafeScanText(json?.message || json?.error || 'Не вдалося виконати scan.'))}</td></tr>`;
         return;
     }
 
-    if (!services.length) {
-        body.innerHTML = '<tr><td colspan="9" class="rnh-tpl-muted">Нема сервісів для scan.</td></tr>';
+    const results = Array.isArray(json.results) ? json.results : [];
+
+    if (!results.length) {
+        body.innerHTML = '<tr><td colspan="9" class="rnh-tpl-muted">Scan не повернув сервісів.</td></tr>';
         return;
     }
 
-    body.innerHTML = services.slice(0, 12).map((item) => `
-        <tr>
-            <td><input type="checkbox" checked></td>
-            <td>${rnhTplEscape(item.service_name || '')}</td>
-            <td><span class="rnh-tpl-status warn">Draft</span></td>
-            <td>—</td>
-            <td>—</td>
-            <td>${rnhTplEscape(item.target_ref || '')}</td>
-            <td>${rnhTplEscape((item.base_ref || 'base') + '..' + (item.target_ref || 'target'))}</td>
-            <td>Scan endpoint ще не підключено</td>
-            <td>${rnhTplEscape(item.note || '')}</td>
-        </tr>
-    `).join('');
+    body.innerHTML = results.map((service) => {
+        const summary = rnhTplScanServiceSummary(service);
+        const targets = Array.isArray(service.target_refs) ? service.target_refs.join(', ') : '';
+        const targetShortstats = (Array.isArray(service.results) ? service.results : [])
+            .map((target) => target.shortstat || '')
+            .filter(Boolean)
+            .join(' | ');
+        const warning = service.message || service.error || (summary.hasTargetError ? 'Є помилки по target refs.' : '');
 
-    rnhTplNotice('Scan поки draft. Реальний перебір сервісів підключимо наступним кроком.', 'warn');
+        return `
+            <tr>
+                <td>${service.included === false ? '' : '✓'}</td>
+                <td>${rnhTplEscape(rnhTplSafeScanText(service.service_name || service.name || 'service'))}</td>
+                <td><span class="rnh-tpl-status ${rnhTplScanStateClass(summary.state)}">${rnhTplEscape(summary.state)}</span></td>
+                <td>${summary.commitCount}</td>
+                <td>${summary.fileCount}</td>
+                <td>${rnhTplEscape(rnhTplSafeScanText(targets))}</td>
+                <td>${rnhTplEscape(rnhTplSafeScanText(service.base_ref || 'base'))}..${rnhTplEscape(rnhTplSafeScanText(targetShortstats || 'no changes'))}</td>
+                <td>${rnhTplEscape(rnhTplSafeScanText(warning))}</td>
+                <td>${rnhTplRenderScanDetails(service)}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function rnhTplScanDraft() {
+    if (!rnhCurrentTemplate || !rnhCurrentTemplate.id) {
+        rnhTplNotice('Не знайдено активний шаблон для scan.', 'warn');
+        return;
+    }
+
+    rnhTplSyncMainFields();
+
+    const body = document.getElementById('rnhTplScanBody');
+    body.innerHTML = '<tr><td colspan="9" class="rnh-tpl-muted">Сканую зміни по сервісах...</td></tr>';
+    rnhTplNotice('Сканую зміни по сервісах...');
+
+    try {
+        const response = await fetch(`/rnh/templates/${encodeURIComponent(rnhCurrentTemplate.id)}/git-diffs`, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': rnhTplCsrfHeaderToken(),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({
+                full: false,
+                max_commits: 200,
+                max_files: 400,
+            }),
+        });
+
+        const json = await response.json().catch(() => ({
+            ok: false,
+            message: `HTTP ${response.status}`,
+        }));
+
+        rnhTplRenderScanResults(json);
+
+        if (!response.ok || !json.ok) {
+            rnhTplNotice(json.message || 'Scan завершився помилкою.', 'warn');
+            return;
+        }
+
+        const results = Array.isArray(json.results) ? json.results : [];
+        const changed = results.filter((service) => rnhTplScanServiceSummary(service).state === 'changed').length;
+        const failed = results.filter((service) => ['error', 'warning'].includes(rnhTplScanServiceSummary(service).state)).length;
+        rnhTplNotice(`Scan завершено. Змінено сервісів: ${changed}, з попередженнями/помилками: ${failed}.`, failed ? 'warn' : '');
+    } catch (error) {
+        body.innerHTML = `<tr><td colspan="9" class="rnh-tpl-muted">${rnhTplEscape(rnhTplSafeScanText(error.message || error))}</td></tr>`;
+        rnhTplNotice(error.message || 'Не вдалося виконати scan.', 'warn');
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
