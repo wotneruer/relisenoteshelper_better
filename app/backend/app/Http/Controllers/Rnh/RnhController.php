@@ -1289,6 +1289,71 @@ public function releases()
             return array_intersect_key($payload, array_flip($columns));
         };
 
+        $normalizeReleaseNotes = static function (mixed $value): array {
+            $data = is_array($value) ? $value : [];
+
+            $glossary = [];
+            foreach ((array) ($data['glossary'] ?? $data['terms'] ?? []) as $term => $meaning) {
+                if (is_array($meaning)) {
+                    continue;
+                }
+
+                $term = trim((string) $term);
+                $meaning = trim((string) $meaning);
+
+                if ($term !== '' && $meaning !== '') {
+                    $glossary[$term] = $meaning;
+                }
+            }
+
+            $instructions = [];
+            foreach ((array) ($data['instructions'] ?? $data['rules'] ?? []) as $instruction) {
+                if (is_array($instruction)) {
+                    continue;
+                }
+
+                $instruction = trim((string) $instruction);
+
+                if ($instruction !== '') {
+                    $instructions[] = $instruction;
+                }
+            }
+
+            $versionChanges = [];
+            $rawVersionChanges = $data['version_changes'] ?? $data['service_versions'] ?? [];
+
+            foreach ((array) $rawVersionChanges as $key => $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $service = trim((string) ($item['service'] ?? $item['service_name'] ?? $item['name'] ?? (is_string($key) ? $key : '')));
+                $from = trim((string) ($item['from'] ?? $item['from_version'] ?? $item['old'] ?? ''));
+                $to = trim((string) ($item['to'] ?? $item['to_version'] ?? $item['new'] ?? ''));
+
+                if ($service === '' || ($from === '' && $to === '')) {
+                    continue;
+                }
+
+                $versionChanges[] = [
+                    'service_id' => is_numeric($item['service_id'] ?? null) ? (int) $item['service_id'] : null,
+                    'service' => $service,
+                    'from' => $from,
+                    'to' => $to,
+                    'source' => trim((string) ($item['source'] ?? 'manual')) ?: 'manual',
+                ];
+            }
+
+            return [
+                'language' => trim((string) ($data['language'] ?? 'uk')) ?: 'uk',
+                'tone' => trim((string) ($data['tone'] ?? 'formal')) ?: 'formal',
+                'glossary' => $glossary,
+                'instructions' => $instructions,
+                'enabled_presets' => array_values(array_filter(array_map(static fn ($item) => trim((string) $item), (array) ($data['enabled_presets'] ?? [])), static fn ($item) => $item !== '')),
+                'version_changes' => $versionChanges,
+            ];
+        };
+
         $templateId = is_numeric($data['id'] ?? null) ? (int) $data['id'] : 0;
 
         $name = $str($data['name'] ?? $data['title'] ?? '', '');
@@ -1313,6 +1378,10 @@ public function releases()
         $defaultTarget = $str($data['default_target_branch'] ?? $data['default_target'] ?? 'origin/dev', 'origin/dev');
 
         $templateMetadata = $decodeMeta($data['metadata'] ?? []);
+        if (array_key_exists('release_notes', $templateMetadata)) {
+            $templateMetadata['release_notes'] = $normalizeReleaseNotes($templateMetadata['release_notes']);
+        }
+
         $templateMetadata = array_replace($templateMetadata, [
             'project' => $project,
             'release_name' => $releaseName,

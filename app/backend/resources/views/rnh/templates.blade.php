@@ -1286,6 +1286,36 @@
                         </div>
                     </div>
 
+                    <div class="rnh-tpl-field" style="margin-top: 14px;">
+                        <label>Release notes context</label>
+                        <div class="rnh-tpl-grid">
+                            <div class="rnh-tpl-field">
+                                <label>Language</label>
+                                <input id="rnhTplRnLanguage" class="rnh-tpl-input" type="text" placeholder="uk">
+                            </div>
+
+                            <div class="rnh-tpl-field">
+                                <label>Tone</label>
+                                <input id="rnhTplRnTone" class="rnh-tpl-input" type="text" placeholder="formal">
+                            </div>
+
+                            <div class="rnh-tpl-field" style="grid-column: 1 / -1;">
+                                <label>Glossary, one term per line: term = meaning</label>
+                                <textarea id="rnhTplRnGlossary" class="rnh-tpl-textarea" placeholder="ВПО = внутрішньо переміщені особи"></textarea>
+                            </div>
+
+                            <div class="rnh-tpl-field" style="grid-column: 1 / -1;">
+                                <label>Instructions, one per line</label>
+                                <textarea id="rnhTplRnInstructions" class="rnh-tpl-textarea" placeholder="Писати офіційною українською мовою."></textarea>
+                            </div>
+
+                            <div class="rnh-tpl-field" style="grid-column: 1 / -1;">
+                                <label>Version changes, one per line: service | from | to</label>
+                                <textarea id="rnhTplRnVersionChanges" class="rnh-tpl-textarea" placeholder="vpo-service | 1.6.0 | 1.7.0"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
                     <input id="rnhTplCode" type="hidden">
                 </div>
             </div>
@@ -1567,6 +1597,135 @@ function rnhTplProjectTags(value) {
         .filter(Boolean);
 }
 
+function rnhTplReleaseNotesDefaults() {
+    return {
+        language: 'uk',
+        tone: 'formal',
+        glossary: {},
+        instructions: [],
+        enabled_presets: [],
+        version_changes: [],
+    };
+}
+
+function rnhTplReleaseNotesContext(template = rnhCurrentTemplate) {
+    const metadata = template?.metadata && typeof template.metadata === 'object' ? template.metadata : {};
+    return Object.assign(rnhTplReleaseNotesDefaults(), metadata.release_notes || {});
+}
+
+function rnhTplGlossaryToText(glossary) {
+    if (!glossary || typeof glossary !== 'object' || Array.isArray(glossary)) return '';
+
+    return Object.entries(glossary)
+        .filter(([term, meaning]) => String(term || '').trim() && String(meaning || '').trim())
+        .map(([term, meaning]) => `${term} = ${meaning}`)
+        .join('\n');
+}
+
+function rnhTplGlossaryFromText(value) {
+    const glossary = {};
+
+    String(value || '').split(/\r?\n/).forEach((line) => {
+        const text = line.trim();
+        if (!text) return;
+
+        const parts = text.split(/\s*(?:=|:|\|)\s*/);
+        const term = String(parts.shift() || '').trim();
+        const meaning = parts.join(' = ').trim();
+
+        if (term && meaning) {
+            glossary[term] = meaning;
+        }
+    });
+
+    return glossary;
+}
+
+function rnhTplVersionChangeServiceMatch(serviceName) {
+    const needle = String(serviceName || '').trim().toLowerCase();
+    if (!needle || !rnhCurrentTemplate) return null;
+
+    return (rnhCurrentTemplate.services || []).find((item) => {
+        return [
+            item.service_id,
+            item.id,
+            item.service_name,
+            item.name,
+            item.service_slug,
+            item.slug,
+        ].some((value) => String(value || '').trim().toLowerCase() === needle);
+    }) || null;
+}
+
+function rnhTplVersionChangesToText(items) {
+    if (!Array.isArray(items)) return '';
+
+    return items
+        .map((item) => {
+            const service = item.service || item.service_name || item.name || item.service_id || '';
+            return [service, item.from || item.from_version || '', item.to || item.to_version || '']
+                .map((value) => String(value || '').trim())
+                .join(' | ');
+        })
+        .filter((line) => line.replace(/[|\s]/g, '') !== '')
+        .join('\n');
+}
+
+function rnhTplVersionChangesFromText(value) {
+    return String(value || '').split(/\r?\n/).map((line) => {
+        const parts = line.split('|').map((part) => part.trim());
+        const serviceName = parts[0] || '';
+        const from = parts[1] || '';
+        const to = parts[2] || '';
+
+        if (!serviceName || (!from && !to)) return null;
+
+        const match = rnhTplVersionChangeServiceMatch(serviceName);
+
+        return {
+            service_id: Number(match?.service_id || match?.id || 0) || null,
+            service: match?.service_name || match?.name || serviceName,
+            from,
+            to,
+            source: 'manual',
+        };
+    }).filter(Boolean);
+}
+
+function rnhTplRenderReleaseNotesContext() {
+    const context = rnhTplReleaseNotesContext();
+
+    document.getElementById('rnhTplRnLanguage').value = context.language || 'uk';
+    document.getElementById('rnhTplRnTone').value = context.tone || 'formal';
+    document.getElementById('rnhTplRnGlossary').value = rnhTplGlossaryToText(context.glossary || context.terms || {});
+    document.getElementById('rnhTplRnInstructions').value = Array.isArray(context.instructions)
+        ? context.instructions.join('\n')
+        : '';
+    document.getElementById('rnhTplRnVersionChanges').value = rnhTplVersionChangesToText(context.version_changes || context.service_versions || []);
+}
+
+function rnhTplSyncReleaseNotesContext() {
+    if (!rnhCurrentTemplate) return;
+
+    const metadata = rnhCurrentTemplate.metadata && typeof rnhCurrentTemplate.metadata === 'object'
+        ? rnhCurrentTemplate.metadata
+        : {};
+
+    metadata.release_notes = {
+        language: document.getElementById('rnhTplRnLanguage').value.trim() || 'uk',
+        tone: document.getElementById('rnhTplRnTone').value.trim() || 'formal',
+        glossary: rnhTplGlossaryFromText(document.getElementById('rnhTplRnGlossary').value),
+        instructions: document.getElementById('rnhTplRnInstructions').value
+            .split(/\r?\n/)
+            .map((item) => item.trim())
+            .filter(Boolean),
+        enabled_presets: Array.isArray(metadata.release_notes?.enabled_presets) ? metadata.release_notes.enabled_presets : [],
+        version_changes: rnhTplVersionChangesFromText(document.getElementById('rnhTplRnVersionChanges').value),
+    };
+
+    rnhCurrentTemplate.metadata = metadata;
+}
+
 function rnhTplRenderProjectChips() {
     const tags = rnhTplProjectTags(document.getElementById('rnhTplProject').value);
     const root = document.getElementById('rnhTplProjectChips');
@@ -1624,7 +1783,7 @@ function rnhTplSelect(id) {
 
 function rnhTplRenderCurrent() {
     if (!rnhCurrentTemplate) {
-        ['rnhTplName', 'rnhTplReleaseName', 'rnhTplProject', 'rnhTplCode', 'rnhTplDescription'].forEach((id) => {
+        ['rnhTplName', 'rnhTplReleaseName', 'rnhTplProject', 'rnhTplCode', 'rnhTplDescription', 'rnhTplRnLanguage', 'rnhTplRnTone', 'rnhTplRnGlossary', 'rnhTplRnInstructions', 'rnhTplRnVersionChanges'].forEach((id) => {
             document.getElementById(id).value = '';
         });
 
@@ -1644,6 +1803,7 @@ function rnhTplRenderCurrent() {
     document.getElementById('rnhTplScanVersion').value = '';
 
     rnhTplRenderProjectChips();
+    rnhTplRenderReleaseNotesContext();
     rnhTplUpdateReleasePreview();
     rnhTplRenderServices();
     rnhTplRenderServiceSelect();
@@ -1659,6 +1819,7 @@ function rnhTplSyncMainFields() {
     rnhCurrentTemplate.code = document.getElementById('rnhTplCode').value || rnhTplSlugify(rnhCurrentTemplate.name);
     rnhCurrentTemplate.description = document.getElementById('rnhTplDescription').value;
     rnhCurrentTemplate.active = document.getElementById('rnhTplActive').checked;
+    rnhTplSyncReleaseNotesContext();
 }
 
 function rnhTplSlugify(value) {
@@ -1965,6 +2126,7 @@ async function rnhTplSaveNotice() {
         default_target: rnhCurrentTemplate.default_target || 'origin/dev',
         description: rnhCurrentTemplate.description || '',
         active: !!rnhCurrentTemplate.active,
+        metadata: rnhCurrentTemplate.metadata || {},
         services: (rnhCurrentTemplate.services || []).map((item) => ({
             service_id: item.service_id || null,
             service_name: item.service_name || item.name || '',
@@ -2085,7 +2247,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('rnhTplSearch').addEventListener('input', rnhTplRenderList);
     document.getElementById('rnhTplProjectFilter').addEventListener('change', rnhTplRenderList);
 
-    ['rnhTplName', 'rnhTplReleaseName', 'rnhTplProject', 'rnhTplDefaultTarget', 'rnhTplDescription', 'rnhTplActive'].forEach((id) => {
+    ['rnhTplName', 'rnhTplReleaseName', 'rnhTplProject', 'rnhTplDefaultTarget', 'rnhTplDescription', 'rnhTplActive', 'rnhTplRnLanguage', 'rnhTplRnTone', 'rnhTplRnGlossary', 'rnhTplRnInstructions', 'rnhTplRnVersionChanges'].forEach((id) => {
         document.getElementById(id).addEventListener('input', () => {
             rnhTplSyncMainFields();
             rnhTplRenderProjectChips();
