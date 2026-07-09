@@ -2056,6 +2056,17 @@ public function releases()
             ], $diffResponse->getStatusCode() >= 400 ? $diffResponse->getStatusCode() : 500);
         }
 
+        $templateRow = DB::table('release_templates')->where('id', $id)->first();
+        $templateMetadata = [];
+
+        if ($templateRow && property_exists($templateRow, 'metadata')) {
+            $decoded = json_decode((string) ($templateRow->metadata ?? ''), true);
+            $templateMetadata = is_array($decoded) ? $decoded : [];
+        }
+
+        $diffPayload['template'] = is_array($diffPayload['template'] ?? null) ? $diffPayload['template'] : [];
+        $diffPayload['template']['metadata'] = $templateMetadata;
+
         $sendTechnicalData = $privacy->sendTechnicalData();
         $payload = $builder->build($diffPayload, $sendTechnicalData, [
             'max_commits_per_service' => $maxCommits,

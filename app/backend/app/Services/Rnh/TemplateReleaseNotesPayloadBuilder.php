@@ -91,8 +91,10 @@ class TemplateReleaseNotesPayloadBuilder
             $services[] = $service;
         }
 
+        $releaseNotes = $this->releaseNotesMetadata($template);
+
         return [
-            'schema_version' => 'release_notes_payload.v1',
+            'schema_version' => 'release_notes_payload.v2',
             'technical_data_included' => $includeTechnicalData,
             'privacy' => [
                 'setting_key' => 'ai.send_technical_data',
@@ -104,6 +106,8 @@ class TemplateReleaseNotesPayloadBuilder
                 'code' => $this->clean($this->templateCode($template), $includeTechnicalData),
                 'release_name' => $this->clean((string) ($template['release_name'] ?? ''), $includeTechnicalData),
             ],
+            'release_notes_context' => $this->releaseNotesContext($releaseNotes, $includeTechnicalData),
+            'version_changes' => $this->versionChanges($releaseNotes, $services, $includeTechnicalData),
             'summary' => [
                 'services_total' => count($services),
                 'services_ok' => count(array_filter($services, static fn (array $item) => ($item['state'] ?? '') === 'ok')),
@@ -117,6 +121,100 @@ class TemplateReleaseNotesPayloadBuilder
                 'max_files_per_target' => $maxFiles,
             ],
         ];
+    }
+
+    private function releaseNotesMetadata(array $template): array
+    {
+        $metadata = is_array($template['metadata'] ?? null) ? $template['metadata'] : [];
+        $releaseNotes = $metadata['release_notes'] ?? [];
+
+        return is_array($releaseNotes) ? $releaseNotes : [];
+    }
+
+    private function releaseNotesContext(array $releaseNotes, bool $includeTechnicalData): array
+    {
+        $context = [
+            'language' => $this->clean((string) ($releaseNotes['language'] ?? 'uk'), $includeTechnicalData),
+            'tone' => $this->clean((string) ($releaseNotes['tone'] ?? 'formal'), $includeTechnicalData),
+            'glossary' => $this->stringMap($releaseNotes['glossary'] ?? $releaseNotes['terms'] ?? [], $includeTechnicalData),
+            'instructions' => $this->cleanList($releaseNotes['instructions'] ?? $releaseNotes['rules'] ?? [], $includeTechnicalData),
+            'enabled_presets' => $this->cleanList($releaseNotes['enabled_presets'] ?? [], $includeTechnicalData),
+        ];
+
+        if (isset($releaseNotes['style'])) {
+            $context['style'] = $this->clean((string) $releaseNotes['style'], $includeTechnicalData);
+        }
+
+        return $context;
+    }
+
+    private function versionChanges(array $releaseNotes, array $services, bool $includeTechnicalData): array
+    {
+        $raw = $releaseNotes['service_versions'] ?? $releaseNotes['version_changes'] ?? [];
+
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $servicesByKey = [];
+
+        foreach ($services as $service) {
+            foreach ([
+                (string) ($service['service_id'] ?? ''),
+                (string) ($service['service'] ?? ''),
+                (string) ($service['service_name'] ?? ''),
+                (string) ($service['name'] ?? ''),
+            ] as $key) {
+                $key = $this->lookupKey($key);
+
+                if ($key !== '') {
+                    $servicesByKey[$key] = $service;
+                }
+            }
+        }
+
+        $changes = [];
+
+        foreach ($raw as $key => $value) {
+            if (! is_array($value)) {
+                continue;
+            }
+
+            $serviceName = trim((string) ($value['service'] ?? $value['service_name'] ?? $value['name'] ?? (is_string($key) ? $key : '')));
+            $serviceId = is_numeric($value['service_id'] ?? null) ? (int) $value['service_id'] : 0;
+            $matched = null;
+
+            foreach ([$serviceId > 0 ? (string) $serviceId : '', $serviceName] as $candidate) {
+                $lookup = $this->lookupKey($candidate);
+
+                if ($lookup !== '' && isset($servicesByKey[$lookup])) {
+                    $matched = $servicesByKey[$lookup];
+                    break;
+                }
+            }
+
+            if ($matched) {
+                $serviceId = $serviceId > 0 ? $serviceId : (int) ($matched['service_id'] ?? 0);
+                $serviceName = $serviceName !== '' ? $serviceName : (string) ($matched['service'] ?? '');
+            }
+
+            $from = trim((string) ($value['from'] ?? $value['from_version'] ?? $value['old'] ?? ''));
+            $to = trim((string) ($value['to'] ?? $value['to_version'] ?? $value['new'] ?? ''));
+
+            if ($serviceName === '' || ($from === '' && $to === '')) {
+                continue;
+            }
+
+            $changes[] = [
+                'service_id' => $serviceId,
+                'service' => $this->clean($serviceName, $includeTechnicalData),
+                'from' => $this->clean($from, $includeTechnicalData),
+                'to' => $this->clean($to, $includeTechnicalData),
+                'source' => $this->clean((string) ($value['source'] ?? 'manual'), $includeTechnicalData),
+            ];
+        }
+
+        return $changes;
     }
 
     private function commitSample(array $commits, int $limit, bool $includeTechnicalData): array
@@ -180,6 +278,11 @@ class TemplateReleaseNotesPayloadBuilder
         return $value;
     }
 
+    private function lookupKey(string $value): string
+    {
+        return strtolower(trim($value));
+    }
+
     private function filesChangedCount(string $shortstat, int $fallback): int
     {
         if (preg_match('/(\d+)\s+files?\s+changed/i', $shortstat, $matches)) {
@@ -219,6 +322,30 @@ class TemplateReleaseNotesPayloadBuilder
         }
 
         return array_values(array_filter(array_map(fn ($item) => $this->clean((string) $item, $includeTechnicalData), $values), static fn ($item) => $item !== ''));
+    }
+
+    private function stringMap(mixed $values, bool $includeTechnicalData): array
+    {
+        if (! is_array($values)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($values as $key => $value) {
+            if (is_array($value)) {
+                continue;
+            }
+
+            $cleanKey = $this->clean((string) $key, $includeTechnicalData);
+            $cleanValue = $this->clean((string) $value, $includeTechnicalData);
+
+            if ($cleanKey !== '' && $cleanValue !== '') {
+                $result[$cleanKey] = $cleanValue;
+            }
+        }
+
+        return $result;
     }
 
     private function clean(string $value, bool $includeTechnicalData): string
