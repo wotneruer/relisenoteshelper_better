@@ -1481,6 +1481,7 @@
                     <label>Ref</label>
                     <input id="rnhTplModalTargetRef" class="rnh-tpl-input" type="text">
                 </div>
+                <div id="rnhTplModalTargetChoices" class="rnh-tpl-chipline" style="margin: -2px 0 8px 100px;"></div>
 
                 <div class="rnh-tpl-ref-row">
                     <label>HEAD commit</label>
@@ -3468,6 +3469,104 @@ document.addEventListener('DOMContentLoaded', function () {
         el.innerHTML = options.join('');
     }
 
+    function refNames(refs) {
+        const seen = new Set();
+        const names = [];
+
+        for (const ref of refs || []) {
+            const name = refLabel(ref);
+            if (!name || seen.has(name)) continue;
+            seen.add(name);
+            names.push(name);
+        }
+
+        return names;
+    }
+
+    function modalTargetNames() {
+        const input = byId('rnhTplModalTargetRef');
+        const stored = input?.dataset?.refNames || '';
+
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed)) {
+                    return parsed.map((value) => str(value)).filter(Boolean);
+                }
+            } catch (e) {}
+        }
+
+        return str(input?.value || '')
+            .split(/[\n,]+/)
+            .map((value) => value.trim())
+            .filter(Boolean);
+    }
+
+    function setModalTargetNames(names) {
+        const input = byId('rnhTplModalTargetRef');
+        const clean = Array.from(new Set((names || []).map((value) => str(value)).filter(Boolean)));
+
+        if (!input) return;
+
+        input.dataset.refNames = JSON.stringify(clean);
+        input.value = clean[0] || '';
+
+        const first = clean[0] || '';
+        const refs = refsForCurrent();
+        const allRefs = [
+            ...(refs?.branches || []),
+            ...(refs?.tags || []),
+        ];
+        const selected = allRefs.find((ref) => refLabel(ref) === first);
+        const sha = shaOf(selected);
+
+        if (sha && (byId('rnhTplModalTargetType')?.value || 'branch') === 'branch') {
+            byId('rnhTplModalTargetCommit').value = sha;
+        }
+    }
+
+    function renderTargetChoices() {
+        const box = byId('rnhTplModalTargetChoices');
+        if (!box) return;
+
+        const refs = refsForCurrent();
+        const targetType = byId('rnhTplModalTargetType')?.value || 'branch';
+        const names = refNames(targetType === 'branch' ? (refs?.branches || []) : (refs?.tags || []));
+        const selected = new Set(modalTargetNames());
+
+        if (!names.length) {
+            box.innerHTML = '';
+            box.style.display = 'none';
+            return;
+        }
+
+        box.style.display = 'flex';
+        box.innerHTML = '';
+
+        names.forEach((name) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'rnh-tpl-chip';
+            button.textContent = (selected.has(name) ? '✓ ' : '+ ') + name;
+            button.style.cursor = 'pointer';
+            button.style.borderColor = selected.has(name) ? '#4f8cff' : '#405266';
+            button.style.background = selected.has(name) ? 'rgba(79,140,255,.18)' : '#162436';
+            button.addEventListener('pointerdown', (event) => {
+                event.preventDefault();
+                const next = new Set(modalTargetNames());
+                if (next.has(name)) {
+                    next.delete(name);
+                } else {
+                    next.add(name);
+                }
+
+                setModalTargetNames(Array.from(next));
+                renderTargetChoices();
+            });
+            box.appendChild(button);
+        });
+    }
+
     function refsForCurrent() {
         const sid = currentServiceId();
         return sid > 0 ? (refsCacheV8[String(sid)] || null) : null;
@@ -3481,6 +3580,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         byId('rnhTplModalBaseRef')?.setAttribute('list', baseType === 'branch' ? 'rnhTplRefsBranchesV8' : 'rnhTplRefsTagsV8');
         byId('rnhTplModalTargetRef')?.setAttribute('list', targetType === 'branch' ? 'rnhTplRefsBranchesV8' : 'rnhTplRefsTagsV8');
+        renderTargetChoices();
     }
 
     async function loadRefs(force = false) {
@@ -3617,7 +3717,9 @@ document.addEventListener('DOMContentLoaded', function () {
             byId('rnhTplModalBaseRef').value = first([item.base_ref, item.base_ref_name, item.baseline_ref, item.baseline_version], '');
             byId('rnhTplModalBaseCommit').value = first([item.base_commit, item.base_commit_sha, item.baseline_sha], '');
             byId('rnhTplModalTargetType').value = first([item.target_type, item.target_ref_type], 'branch');
-            byId('rnhTplModalTargetRef').value = first([item.target_ref, item.target_ref_name, item.target_branch, rnhCurrentTemplate?.default_target], 'origin/dev');
+            setModalTargetNames(Array.isArray(item.target_ref_names) && item.target_ref_names.length
+                ? item.target_ref_names
+                : [first([item.target_ref, item.target_ref_name, item.target_branch, rnhCurrentTemplate?.default_target], 'origin/dev')]);
             byId('rnhTplModalTargetCommit').value = first([item.target_commit, item.target_commit_sha], '');
         }
 
@@ -3647,7 +3749,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const baseRef = byId('rnhTplModalBaseRef').value;
         const baseCommit = byId('rnhTplModalBaseCommit').value;
         const targetType = byId('rnhTplModalTargetType').value;
-        const targetRef = byId('rnhTplModalTargetRef').value;
+        const targetNames = modalTargetNames();
+        const targetRef = targetNames[0] || byId('rnhTplModalTargetRef').value;
         const targetCommit = byId('rnhTplModalTargetCommit').value;
 
         item.base_type = baseType;
@@ -3664,6 +3767,7 @@ document.addEventListener('DOMContentLoaded', function () {
         item.target_ref_type = targetType;
         item.target_ref = targetRef;
         item.target_ref_name = targetRef;
+        item.target_ref_names = targetNames.length ? targetNames : [targetRef].filter(Boolean);
         item.target_branch = targetRef;
         item.target_commit = targetCommit;
         item.target_commit_sha = targetCommit;
@@ -3681,7 +3785,15 @@ document.addEventListener('DOMContentLoaded', function () {
         ensureRefsUi();
 
         byId('rnhTplModalBaseType')?.addEventListener('change', syncInputLists);
-        byId('rnhTplModalTargetType')?.addEventListener('change', syncInputLists);
+        byId('rnhTplModalTargetType')?.addEventListener('change', () => {
+            setModalTargetNames([]);
+            byId('rnhTplModalTargetCommit').value = '';
+            syncInputLists();
+        });
+        byId('rnhTplModalTargetRef')?.addEventListener('input', () => {
+            delete byId('rnhTplModalTargetRef').dataset.refNames;
+            renderTargetChoices();
+        });
     });
 })();
 /* RNH_TEMPLATES_SERVICE_REFS_LOGIC_V8_END */

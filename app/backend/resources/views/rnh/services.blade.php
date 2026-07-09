@@ -2355,9 +2355,20 @@ document.getElementById('serviceNotes').value = service.notes || '';
                 input.value = option.value;
                 input.checked = selected.has(option.value);
 
-                input.addEventListener('change', () => {
+                const applySelection = (checked) => {
+                    input.checked = checked;
                     option.selected = input.checked;
                     select.dispatchEvent(new Event('change', { bubbles: true }));
+                };
+
+                label.addEventListener('pointerdown', (event) => {
+                    event.preventDefault();
+                    applySelection(!input.checked);
+                    syncTargetRefBranchTags();
+                });
+
+                input.addEventListener('change', () => {
+                    applySelection(input.checked);
                 });
 
                 const span = document.createElement('span');
