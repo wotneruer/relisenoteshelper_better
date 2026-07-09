@@ -1319,10 +1319,10 @@ public function releases()
                 }
             }
 
-            $versionChanges = [];
-            $rawVersionChanges = $data['version_changes'] ?? $data['service_versions'] ?? [];
+            $versionOverrides = [];
+            $rawVersionOverrides = $data['version_overrides'] ?? [];
 
-            foreach ((array) $rawVersionChanges as $key => $item) {
+            foreach ((array) $rawVersionOverrides as $key => $item) {
                 if (! is_array($item)) {
                     continue;
                 }
@@ -1335,7 +1335,7 @@ public function releases()
                     continue;
                 }
 
-                $versionChanges[] = [
+                $versionOverrides[] = [
                     'service_id' => is_numeric($item['service_id'] ?? null) ? (int) $item['service_id'] : null,
                     'service' => $service,
                     'from' => $from,
@@ -1350,7 +1350,7 @@ public function releases()
                 'glossary' => $glossary,
                 'instructions' => $instructions,
                 'enabled_presets' => array_values(array_filter(array_map(static fn ($item) => trim((string) $item), (array) ($data['enabled_presets'] ?? [])), static fn ($item) => $item !== '')),
-                'version_changes' => $versionChanges,
+                'version_overrides' => $versionOverrides,
             ];
         };
 

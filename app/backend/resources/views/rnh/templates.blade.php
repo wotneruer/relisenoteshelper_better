@@ -1309,10 +1309,6 @@
                                 <textarea id="rnhTplRnInstructions" class="rnh-tpl-textarea" placeholder="Писати офіційною українською мовою."></textarea>
                             </div>
 
-                            <div class="rnh-tpl-field" style="grid-column: 1 / -1;">
-                                <label>Version changes, one per line: service | from | to</label>
-                                <textarea id="rnhTplRnVersionChanges" class="rnh-tpl-textarea" placeholder="vpo-service | 1.6.0 | 1.7.0"></textarea>
-                            </div>
                         </div>
                     </div>
 
@@ -1604,7 +1600,7 @@ function rnhTplReleaseNotesDefaults() {
         glossary: {},
         instructions: [],
         enabled_presets: [],
-        version_changes: [],
+        version_overrides: [],
     };
 }
 
@@ -1641,57 +1637,6 @@ function rnhTplGlossaryFromText(value) {
     return glossary;
 }
 
-function rnhTplVersionChangeServiceMatch(serviceName) {
-    const needle = String(serviceName || '').trim().toLowerCase();
-    if (!needle || !rnhCurrentTemplate) return null;
-
-    return (rnhCurrentTemplate.services || []).find((item) => {
-        return [
-            item.service_id,
-            item.id,
-            item.service_name,
-            item.name,
-            item.service_slug,
-            item.slug,
-        ].some((value) => String(value || '').trim().toLowerCase() === needle);
-    }) || null;
-}
-
-function rnhTplVersionChangesToText(items) {
-    if (!Array.isArray(items)) return '';
-
-    return items
-        .map((item) => {
-            const service = item.service || item.service_name || item.name || item.service_id || '';
-            return [service, item.from || item.from_version || '', item.to || item.to_version || '']
-                .map((value) => String(value || '').trim())
-                .join(' | ');
-        })
-        .filter((line) => line.replace(/[|\s]/g, '') !== '')
-        .join('\n');
-}
-
-function rnhTplVersionChangesFromText(value) {
-    return String(value || '').split(/\r?\n/).map((line) => {
-        const parts = line.split('|').map((part) => part.trim());
-        const serviceName = parts[0] || '';
-        const from = parts[1] || '';
-        const to = parts[2] || '';
-
-        if (!serviceName || (!from && !to)) return null;
-
-        const match = rnhTplVersionChangeServiceMatch(serviceName);
-
-        return {
-            service_id: Number(match?.service_id || match?.id || 0) || null,
-            service: match?.service_name || match?.name || serviceName,
-            from,
-            to,
-            source: 'manual',
-        };
-    }).filter(Boolean);
-}
-
 function rnhTplRenderReleaseNotesContext() {
     const context = rnhTplReleaseNotesContext();
 
@@ -1701,7 +1646,6 @@ function rnhTplRenderReleaseNotesContext() {
     document.getElementById('rnhTplRnInstructions').value = Array.isArray(context.instructions)
         ? context.instructions.join('\n')
         : '';
-    document.getElementById('rnhTplRnVersionChanges').value = rnhTplVersionChangesToText(context.version_changes || context.service_versions || []);
 }
 
 function rnhTplSyncReleaseNotesContext() {
@@ -1720,7 +1664,7 @@ function rnhTplSyncReleaseNotesContext() {
             .map((item) => item.trim())
             .filter(Boolean),
         enabled_presets: Array.isArray(metadata.release_notes?.enabled_presets) ? metadata.release_notes.enabled_presets : [],
-        version_changes: rnhTplVersionChangesFromText(document.getElementById('rnhTplRnVersionChanges').value),
+        version_overrides: Array.isArray(metadata.release_notes?.version_overrides) ? metadata.release_notes.version_overrides : [],
     };
 
     rnhCurrentTemplate.metadata = metadata;
@@ -1783,7 +1727,7 @@ function rnhTplSelect(id) {
 
 function rnhTplRenderCurrent() {
     if (!rnhCurrentTemplate) {
-        ['rnhTplName', 'rnhTplReleaseName', 'rnhTplProject', 'rnhTplCode', 'rnhTplDescription', 'rnhTplRnLanguage', 'rnhTplRnTone', 'rnhTplRnGlossary', 'rnhTplRnInstructions', 'rnhTplRnVersionChanges'].forEach((id) => {
+        ['rnhTplName', 'rnhTplReleaseName', 'rnhTplProject', 'rnhTplCode', 'rnhTplDescription', 'rnhTplRnLanguage', 'rnhTplRnTone', 'rnhTplRnGlossary', 'rnhTplRnInstructions'].forEach((id) => {
             document.getElementById(id).value = '';
         });
 
@@ -2247,7 +2191,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('rnhTplSearch').addEventListener('input', rnhTplRenderList);
     document.getElementById('rnhTplProjectFilter').addEventListener('change', rnhTplRenderList);
 
-    ['rnhTplName', 'rnhTplReleaseName', 'rnhTplProject', 'rnhTplDefaultTarget', 'rnhTplDescription', 'rnhTplActive', 'rnhTplRnLanguage', 'rnhTplRnTone', 'rnhTplRnGlossary', 'rnhTplRnInstructions', 'rnhTplRnVersionChanges'].forEach((id) => {
+    ['rnhTplName', 'rnhTplReleaseName', 'rnhTplProject', 'rnhTplDefaultTarget', 'rnhTplDescription', 'rnhTplActive', 'rnhTplRnLanguage', 'rnhTplRnTone', 'rnhTplRnGlossary', 'rnhTplRnInstructions'].forEach((id) => {
         document.getElementById(id).addEventListener('input', () => {
             rnhTplSyncMainFields();
             rnhTplRenderProjectChips();

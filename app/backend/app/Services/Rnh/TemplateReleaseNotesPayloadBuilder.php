@@ -150,7 +150,7 @@ class TemplateReleaseNotesPayloadBuilder
 
     private function versionChanges(array $releaseNotes, array $services, bool $includeTechnicalData): array
     {
-        $raw = $releaseNotes['service_versions'] ?? $releaseNotes['version_changes'] ?? [];
+        $raw = $releaseNotes['derived_version_changes'] ?? $releaseNotes['computed_version_changes'] ?? [];
 
         if (! is_array($raw)) {
             return [];
