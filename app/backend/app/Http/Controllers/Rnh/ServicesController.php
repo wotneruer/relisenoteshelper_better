@@ -209,6 +209,15 @@ class ServicesController extends Controller
             $wasClone = true;
 
             $this->syncRunProcess(['git', '-C', $repoPath, 'remote', 'set-url', 'origin', $gitUrl], null, [], $secrets);
+        } else {
+            $originCheck = $this->syncValidateRepositoryOrigin($repoPath, $gitUrl, $secrets);
+
+            if (!$originCheck['ok']) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => $originCheck['message'],
+                ], 409);
+            }
         }
 
         $fetch = $this->syncRunProcess([
@@ -1846,17 +1855,11 @@ class ServicesController extends Controller
 
     private function syncTargetRepositoryPath(object $row, string $gitUrl): string
     {
-        $existing = trim((string)($row->local_path ?? ''));
-
-        if ($existing !== '') {
-            return $existing;
-        }
-
         $reposRoot = $this->settingValue('paths.repos', '/app/data/repos');
-        $name = $this->syncSafePathSegment((string)($row->slug ?? ''));
+        $name = $this->syncSafePathSegment($this->repoNameFromUrl($gitUrl));
 
         if ($name === '') {
-            $name = $this->syncSafePathSegment($this->repoNameFromUrl($gitUrl));
+            $name = $this->syncSafePathSegment((string)($row->slug ?? ''));
         }
 
         if ($name === '') {
@@ -1864,6 +1867,57 @@ class ServicesController extends Controller
         }
 
         return rtrim((string)$reposRoot, '/') . '/' . $name;
+    }
+
+    private function syncValidateRepositoryOrigin(string $repoPath, string $gitUrl, array $secrets = []): array
+    {
+        $origin = $this->syncRunProcess(['git', '-C', $repoPath, 'remote', 'get-url', 'origin'], null, [], $secrets);
+
+        if ($origin['exit'] !== 0) {
+            return [
+                'ok' => false,
+                'message' => 'Local repo has no readable origin remote: ' . trim($origin['err'] ?: $origin['out']),
+            ];
+        }
+
+        $originUrl = trim($origin['out']);
+
+        if ($this->syncNormalizeGitUrl($originUrl) !== $this->syncNormalizeGitUrl($gitUrl)) {
+            return [
+                'ok' => false,
+                'message' => 'Local repo origin does not match service git_url. path=' . $repoPath . ', origin=' . $originUrl,
+            ];
+        }
+
+        return ['ok' => true];
+    }
+
+    private function syncNormalizeGitUrl(string $url): string
+    {
+        $url = trim($url);
+
+        if ($url === '') {
+            return '';
+        }
+
+        if (!preg_match('#^[a-z][a-z0-9+.-]*://#i', $url) && preg_match('/^([^@]+@)?([^:\/]+):(.+)$/', $url, $matches)) {
+            $host = strtolower($matches[2]);
+            $path = trim($matches[3], '/');
+
+            return $host . '/' . preg_replace('/\.git$/i', '', $path);
+        }
+
+        $parts = parse_url($url);
+
+        if (is_array($parts) && !empty($parts['host'])) {
+            $host = strtolower((string)$parts['host']);
+            $port = isset($parts['port']) ? ':' . $parts['port'] : '';
+            $path = trim((string)($parts['path'] ?? ''), '/');
+
+            return $host . $port . '/' . preg_replace('/\.git$/i', '', $path);
+        }
+
+        return preg_replace('/\.git$/i', '', rtrim($url, '/'));
     }
 
     private function syncAuthenticatedGitUrl(string $url): array
@@ -2144,6 +2198,15 @@ class ServicesController extends Controller
 
             $wasClone = true;
             $this->syncRunProcess(['git', '-C', $repoPath, 'remote', 'set-url', 'origin', $gitUrl], null, [], $secrets);
+        } else {
+            $originCheck = $this->syncValidateRepositoryOrigin($repoPath, $gitUrl, $secrets);
+
+            if (!$originCheck['ok']) {
+                return [
+                    'ok' => false,
+                    'message' => $originCheck['message'],
+                ];
+            }
         }
 
         $fetch = $this->syncRunProcess([
