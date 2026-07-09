@@ -14,7 +14,9 @@ use App\Models\Repository;
 use App\Models\RnhSetting;
 use App\Models\Service;
 use App\Services\Rnh\GitRunner;
+use App\Services\Rnh\AiTechnicalDataPolicy;
 use App\Services\Rnh\ServiceCatalogViewModel;
+use App\Services\Rnh\TemplateReleaseNotesPayloadBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -2022,6 +2024,48 @@ public function releases()
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+
+    public function templateReleaseNotesPayload(
+        Request $request,
+        int $id,
+        AiTechnicalDataPolicy $privacy,
+        TemplateReleaseNotesPayloadBuilder $builder
+    ) {
+        $maxCommits = max(1, min(500, (int) $request->input('max_commits_per_service', 50)));
+        $maxFiles = max(1, min(1000, (int) $request->input('max_files_per_target', 100)));
+
+        $diffRequest = Request::create('/rnh/templates/' . $id . '/git-diffs', 'POST', [
+            'full' => filter_var($request->input('full', false), FILTER_VALIDATE_BOOLEAN),
+            'max_commits' => $maxCommits,
+            'max_files' => $maxFiles,
+            'max_patch_bytes' => 0,
+        ]);
+
+        $diffResponse = $this->templateGitDiffs($diffRequest, $id);
+        $diffPayload = method_exists($diffResponse, 'getData')
+            ? (array) $diffResponse->getData(true)
+            : [];
+
+        if ($diffResponse->getStatusCode() >= 400 || ! (bool) ($diffPayload['ok'] ?? false)) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Не вдалося зібрати template git diff для release-notes payload.',
+                'error' => $privacy->sanitizeString((string) ($diffPayload['message'] ?? $diffPayload['error'] ?? ''), false),
+            ], $diffResponse->getStatusCode() >= 400 ? $diffResponse->getStatusCode() : 500);
+        }
+
+        $sendTechnicalData = $privacy->sendTechnicalData();
+        $payload = $builder->build($diffPayload, $sendTechnicalData, [
+            'max_commits_per_service' => $maxCommits,
+            'max_files_per_target' => $maxFiles,
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'payload' => $payload,
+        ]);
     }
 
 
