@@ -2013,8 +2013,35 @@ async function rnhTplSaveNotice() {
             throw new Error(result.message || 'Не вдалося зберегти.');
         }
 
+        if (result.id && rnhCurrentTemplate) {
+            const oldId = rnhCurrentTemplate.id;
+            rnhCurrentTemplate.id = result.id;
+            rnhSelectedTemplateId = result.id;
+
+            const existingIndex = rnhTemplates.findIndex((item) => String(item.id) === String(oldId) || String(item.id) === String(result.id));
+            if (existingIndex >= 0) {
+                rnhTemplates[existingIndex] = rnhTplClone(rnhCurrentTemplate);
+            }
+        }
+
+        if (typeof window.rnhTplSyncGitRefsForCurrentTemplate === 'function') {
+            rnhTplNotice('Збережено. Оновлюю Git refs...');
+
+            try {
+                const summary = await window.rnhTplSyncGitRefsForCurrentTemplate({
+                    quiet: true,
+                    source: 'rnh.templates.save.auto-sync',
+                });
+                const okCount = summary?.ok || 0;
+                const failCount = summary?.failed || 0;
+                rnhTplNotice(`Збережено. Git refs: OK ${okCount}, failed ${failCount}.`, failCount ? 'warn' : '');
+            } catch (syncError) {
+                rnhTplNotice(`Збережено. Git refs: OK 0, failed 1. ${syncError.message || syncError}`, 'warn');
+            }
+            return;
+        }
+
         rnhTplNotice(result.message || 'Збережено.');
-        window.location.href = '{{ route('rnh.templates') }}?template=' + encodeURIComponent(result.id) + '&v=' + Date.now();
     } catch (error) {
         rnhTplNotice(error.message || 'Не вдалося зберегти.', 'warn');
     }
@@ -3650,36 +3677,48 @@ ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
             }
         };
 
-        const syncRefs = async () => {
+        const syncGitRefsForTemplate = async (options = {}) => {
+            const quiet = !!options.quiet;
+            const shouldConfirm = options.confirm !== undefined ? !!options.confirm : !quiet;
+            const shouldOpenPanel = options.openPanel !== undefined ? !!options.openPanel : !quiet;
+            const source = options.source || 'rnh.templates.stage5b';
             const tpl = currentTemplate();
             const services = serviceIdsFromTemplate(tpl);
 
             if (!tpl || !tpl.id) {
-                alert('Не знайдено активний шаблон.');
-                return;
+                if (!quiet) alert('Не знайдено активний шаблон.');
+                return { ok: 0, failed: 0, total: 0, results: [] };
             }
 
             if (!services.length) {
-                alert('У поточному шаблоні не знайдено сервісів для оновлення.');
-                return;
+                if (!quiet) alert('У поточному шаблоні не знайдено сервісів для оновлення.');
+                return { ok: 0, failed: 0, total: 0, results: [] };
             }
 
-            const ok = confirm(`Оновити Git refs для ${services.length} сервісів поточного шаблону? Це може зайняти час.`);
-            if (!ok) return;
+            if (shouldConfirm) {
+                const ok = confirm(`Оновити Git refs для ${services.length} сервісів поточного шаблону? Це може зайняти час.`);
+                if (!ok) return { ok: 0, failed: 0, total: services.length, cancelled: true, results: [] };
+            }
 
-            openGitPanel();
+            if (shouldOpenPanel) {
+                openGitPanel();
+            }
 
-            if (body) {
+            if (!quiet && body) {
                 body.innerHTML = `<p><strong>Оновлюю Git refs для шаблону:</strong> ${escapeHtml(tpl.name || tpl.id)}</p>`;
             }
 
-            syncBtn.disabled = true;
-            syncBtn.textContent = 'Оновлюю...';
+            if (!quiet && syncBtn) {
+                syncBtn.disabled = true;
+                syncBtn.textContent = 'Оновлюю...';
+            }
 
             const results = [];
 
             for (const svc of services) {
-                appendProgress(body, `<p>${escapeHtml(svc.name)} (#${svc.id})...</p>`);
+                if (!quiet) {
+                    appendProgress(body, `<p>${escapeHtml(svc.name)} (#${svc.id})...</p>`);
+                }
 
                 try {
                     const response = await fetch(`/rnh/services/${encodeURIComponent(svc.id)}/sync`, {
@@ -3688,8 +3727,9 @@ ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
                             'Accept': 'application/json',
                             'Content-Type': 'application/json',
                             'X-CSRF-TOKEN': csrfToken(),
+                            'X-Requested-With': 'XMLHttpRequest',
                         },
-                        body: JSON.stringify({ source: 'rnh.templates.stage5b' }),
+                        body: JSON.stringify({ source }),
                     });
 
                     const text = await response.text();
@@ -3708,10 +3748,12 @@ ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
                         response: json || text.slice(0, 500),
                     });
 
-                    appendProgress(
-                        body,
-                        `<p class="${success ? 'rnh-git-diff-stage5-ok' : 'rnh-git-diff-stage5-error'}">${success ? 'OK' : 'FAIL'} ${escapeHtml(svc.name)} - HTTP ${response.status}</p>`
-                    );
+                    if (!quiet) {
+                        appendProgress(
+                            body,
+                            `<p class="${success ? 'rnh-git-diff-stage5-ok' : 'rnh-git-diff-stage5-error'}">${success ? 'OK' : 'FAIL'} ${escapeHtml(svc.name)} - HTTP ${response.status}</p>`
+                        );
+                    }
                 } catch (error) {
                     results.push({
                         id: svc.id,
@@ -3720,23 +3762,40 @@ ${result.patch ? 'PATCH:\n' + escapeHtml(result.patch) : ''}</pre>`);
                         error: error.message || String(error),
                     });
 
-                    appendProgress(
-                        body,
-                        `<p class="rnh-git-diff-stage5-error">FAIL ${escapeHtml(svc.name)} - ${escapeHtml(error.message || error)}</p>`
-                    );
+                    if (!quiet) {
+                        appendProgress(
+                            body,
+                            `<p class="rnh-git-diff-stage5-error">FAIL ${escapeHtml(svc.name)} - ${escapeHtml(error.message || error)}</p>`
+                        );
+                    }
                 }
             }
 
             const okCount = results.filter((item) => item.ok).length;
             const failCount = results.length - okCount;
 
-            appendProgress(body, `<hr><p><strong>Готово:</strong> OK ${okCount}, помилок ${failCount}.</p>`);
-            appendProgress(body, `<pre>${escapeHtml(JSON.stringify(results, null, 2))}</pre>`);
-            appendProgress(body, `<p>Тепер натисни <strong>Зберегти шаблон</strong>, щоб актуальні refs/commits були зафіксовані в шаблоні, потім запускай <strong>Git diff по шаблону</strong>.</p>`);
+            if (!quiet) {
+                appendProgress(body, `<hr><p><strong>Готово:</strong> OK ${okCount}, помилок ${failCount}.</p>`);
+                appendProgress(body, `<pre>${escapeHtml(JSON.stringify(results, null, 2))}</pre>`);
+                appendProgress(body, `<p>Тепер натисни <strong>Зберегти шаблон</strong>, щоб актуальні refs/commits були зафіксовані в шаблоні, потім запускай <strong>Git diff по шаблону</strong>.</p>`);
+            }
 
-            syncBtn.disabled = false;
-            syncBtn.textContent = 'Оновити Git refs';
+            if (!quiet && syncBtn) {
+                syncBtn.disabled = false;
+                syncBtn.textContent = 'Оновити Git refs';
+            }
+
+            return {
+                ok: okCount,
+                failed: failCount,
+                total: results.length,
+                results,
+            };
         };
+
+        window.rnhTplSyncGitRefsForCurrentTemplate = syncGitRefsForTemplate;
+
+        const syncRefs = () => syncGitRefsForTemplate({ quiet: false });
 
         if (diffBtn && diffBtn.dataset.rnhGitDiffStage5 !== '1') {
             diffBtn.dataset.rnhGitDiffStage5 = '1';
