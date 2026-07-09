@@ -165,7 +165,21 @@ class ServicesController extends Controller
             ], 422);
         }
 
-        $repoPath = $this->syncTargetRepositoryPath($row, $gitUrl);
+        $auth = $this->syncAuthenticatedGitUrl($gitUrl);
+        $authUrl = $auth['url'];
+        $secrets = $auth['secrets'];
+        $env = $this->syncGitEnv($secrets);
+
+        $repoSelection = $this->syncSelectRepositoryPath($row, $gitUrl, $secrets);
+
+        if (!$repoSelection['ok']) {
+            return response()->json([
+                'ok' => false,
+                'message' => $repoSelection['message'],
+            ], 409);
+        }
+
+        $repoPath = $repoSelection['path'];
         $repoParent = dirname($repoPath);
 
         if (!is_dir($repoParent) && !mkdir($repoParent, 0775, true) && !is_dir($repoParent)) {
@@ -188,11 +202,6 @@ class ServicesController extends Controller
                 'message' => 'Local path існує, але це не git repo: ' . $repoPath,
             ], 409);
         }
-
-        $auth = $this->syncAuthenticatedGitUrl($gitUrl);
-        $authUrl = $auth['url'];
-        $secrets = $auth['secrets'];
-        $env = $this->syncGitEnv($secrets);
 
         $wasClone = false;
 
@@ -1853,20 +1862,93 @@ class ServicesController extends Controller
 
 
 
-    private function syncTargetRepositoryPath(object $row, string $gitUrl): string
+    private function syncSelectRepositoryPath(object $row, string $gitUrl, array $secrets = []): array
+    {
+        $skipped = [];
+        $existing = trim((string)($row->local_path ?? ''));
+
+        if ($existing !== '' && (is_dir($existing . '/.git') || is_file($existing . '/.git'))) {
+            $originCheck = $this->syncValidateRepositoryOrigin($existing, $gitUrl, $secrets);
+
+            if ($originCheck['ok']) {
+                return [
+                    'ok' => true,
+                    'path' => $existing,
+                ];
+            }
+
+            $skipped[] = $originCheck['message'];
+        }
+
+        foreach ($this->syncRepositoryPathCandidates($row, $gitUrl) as $candidate) {
+            if ($candidate === $existing) {
+                continue;
+            }
+
+            if (!file_exists($candidate)) {
+                return [
+                    'ok' => true,
+                    'path' => $candidate,
+                ];
+            }
+
+            if (is_dir($candidate . '/.git') || is_file($candidate . '/.git')) {
+                $originCheck = $this->syncValidateRepositoryOrigin($candidate, $gitUrl, $secrets);
+
+                if ($originCheck['ok']) {
+                    return [
+                        'ok' => true,
+                        'path' => $candidate,
+                    ];
+                }
+
+                $skipped[] = $originCheck['message'];
+                continue;
+            }
+
+            $skipped[] = 'Local path exists but is not a git repo: ' . $candidate;
+        }
+
+        return [
+            'ok' => false,
+            'path' => '',
+            'message' => 'No safe repo cache path found for service #' . (int)($row->id ?? 0) . '. ' . implode(' ', array_filter($skipped)),
+        ];
+    }
+
+    private function syncRepositoryPathCandidates(object $row, string $gitUrl): array
     {
         $reposRoot = $this->settingValue('paths.repos', '/app/data/repos');
-        $name = $this->syncSafePathSegment($this->repoNameFromUrl($gitUrl));
+        $root = rtrim((string)$reposRoot, '/');
+        $repoName = $this->syncSafePathSegment($this->repoNameFromUrl($gitUrl));
+        $candidates = [];
 
-        if ($name === '') {
-            $name = $this->syncSafePathSegment((string)($row->slug ?? ''));
+        $add = static function (string $name) use (&$candidates, $root): void {
+            $name = trim($name);
+
+            if ($name !== '') {
+                $candidates[] = $root . '/' . $name;
+            }
+        };
+
+        foreach ([
+            $this->syncSafePathSegment((string)($row->slug ?? '')),
+            $this->syncSafePathSegment((string)($row->name ?? '')),
+        ] as $serviceName) {
+            if ($serviceName !== '') {
+                $add($serviceName);
+            }
         }
 
-        if ($name === '') {
-            $name = 'service-' . (int)$row->id;
-        }
+        $add($repoName);
 
-        return rtrim((string)$reposRoot, '/') . '/' . $name;
+        $fallback = 'service-' . (int)($row->id ?? 0);
+        if ($repoName !== '') {
+            $fallback .= '-' . $repoName;
+        }
+        $add($fallback);
+
+        return array_values(array_unique($candidates));
     }
 
     private function syncValidateRepositoryOrigin(string $repoPath, string $gitUrl, array $secrets = []): array
@@ -2155,7 +2237,21 @@ class ServicesController extends Controller
 
     private function syncOneServiceRefs(object $row, string $gitUrl): array
     {
-        $repoPath = $this->syncTargetRepositoryPath($row, $gitUrl);
+        $auth = $this->syncAuthenticatedGitUrl($gitUrl);
+        $authUrl = $auth['url'];
+        $secrets = $auth['secrets'];
+        $env = $this->syncGitEnv($secrets);
+
+        $repoSelection = $this->syncSelectRepositoryPath($row, $gitUrl, $secrets);
+
+        if (!$repoSelection['ok']) {
+            return [
+                'ok' => false,
+                'message' => $repoSelection['message'],
+            ];
+        }
+
+        $repoPath = $repoSelection['path'];
         $repoParent = dirname($repoPath);
 
         if (!is_dir($repoParent) && !mkdir($repoParent, 0775, true) && !is_dir($repoParent)) {
@@ -2178,11 +2274,6 @@ class ServicesController extends Controller
                 'message' => 'Local path існує, але це не git repo: ' . $repoPath,
             ];
         }
-
-        $auth = $this->syncAuthenticatedGitUrl($gitUrl);
-        $authUrl = $auth['url'];
-        $secrets = $auth['secrets'];
-        $env = $this->syncGitEnv($secrets);
 
         $wasClone = false;
 
